@@ -7,10 +7,22 @@ ENV_FILE="${ROOT_DIR}/.env"
 
 load_env() {
   if [[ -f "${ENV_FILE}" ]]; then
-    # shellcheck disable=SC1090
-    set -a
-    source "${ENV_FILE}"
-    set +a
+    local line name value
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+      [[ "${line}" =~ ^[[:space:]]*$ ]] && continue
+      [[ "${line}" =~ ^[[:space:]]*# ]] && continue
+      name="${line%%=*}"
+      value="${line#*=}"
+      [[ "${name}" == "${line}" ]] && continue
+      if [[ "${value}" == \"*\" && "${value}" == *\" ]]; then
+        value="${value:1:${#value}-2}"
+      elif [[ "${value}" == \'*\' && "${value}" == *\' ]]; then
+        value="${value:1:${#value}-2}"
+      fi
+      if [[ -z "${!name+x}" ]]; then
+        export "${name}=${value}"
+      fi
+    done < "${ENV_FILE}"
   fi
 
   : "${CLUSTER_NAME:=talos-tailnet-local}"

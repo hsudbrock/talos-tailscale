@@ -2,7 +2,7 @@ SHELL := /usr/bin/env bash
 
 .DEFAULT_GOAL := help
 
-.PHONY: help env image configs start apply bootstrap validate stop clean reset test-local
+.PHONY: help env image configs start apply bootstrap validate stop clean reset test test-local
 
 help:
 	@printf 'Talos over Tailscale local test targets:\n\n'
@@ -15,6 +15,7 @@ help:
 	@printf '  make validate   Validate Talos, Kubernetes, etcd, and smoke workload\n'
 	@printf '  make stop       Stop the QEMU VMs\n'
 	@printf '  make clean      Remove generated .state after stopping VMs\n'
+	@printf '  make test       Run local non-secret validation checks\n'
 	@printf '\nTypical flow:\n'
 	@printf '  make env\n'
 	@printf '  $$EDITOR .env\n'
@@ -54,5 +55,8 @@ clean: stop
 
 reset: clean
 
+test: test-local
+
 test-local:
 	bash -n scripts/lib.sh scripts/prepare-image.sh scripts/generate-configs.sh scripts/start-vms.sh scripts/apply-configs.sh scripts/bootstrap.sh scripts/validate.sh scripts/stop-vms.sh
+	bash tests/script-behavior.sh

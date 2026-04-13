@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Codex
 created_date: '2026-04-13 20:24'
-updated_date: '2026-04-13 20:38'
+updated_date: '2026-04-13 21:14'
 labels:
   - talos
   - tailscale
@@ -52,6 +52,8 @@ Implement a repo-contained local test harness for Talos Kubernetes over Tailscal
 5. Add basic shell syntax validation and update TASK-1 acceptance criteria/final notes with implementation and validation results.
 
 Add a thin Makefile as the primary operator interface for the existing scripts, with targets for setup guidance, image preparation, config generation, VM lifecycle, apply, bootstrap, validation, and cleanup. Keep scripts as the implementation layer and document both Makefile and direct script usage.
+
+Extend `make test` beyond syntax checks with a local fake-bin harness that exercises script behavior without network, VM startup, or real secrets. The tests should stub external commands and assert generated configs, command arguments, and safety properties such as not requiring or printing real `.env` values.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -60,4 +62,16 @@ Add a thin Makefile as the primary operator interface for the existing scripts, 
 Implemented the repo-local harness and documentation. Added README setup/validation/troubleshooting, environment template, QEMU lifecycle scripts, Talos image/config/bootstrap/validation scripts, and a Kubernetes cross-node smoke manifest. Static validation completed: bash syntax checks pass for all scripts, `scripts/generate-configs.sh` succeeds with a dummy schematic ID/auth key, and `talosctl validate --mode metal` passes for all three generated control-plane configs. End-to-end VM/bootstrap validation is not run in this session because it requires a real Tailscale auth key and downloading/booting the Talos factory ISO.
 
 Added Makefile targets as the primary operator interface: env, image, configs, start, apply, bootstrap, validate, stop, clean/reset, and test-local. Updated README setup/testing flow to use Makefile targets while keeping scripts as the implementation/debug layer. Verified `make help` and `make test-local` pass.
+
+Added TDD as an explicit requirement for this task and future changes to the harness: update tests/validation first, then implementation, and require `make test` before completion.
+
+User requested functional script tests. Scope remains within TASK-1 because it directly supports the new TDD requirement and improves validation of the existing harness.
+
+Extended `make test` with functional script behavior tests under `tests/script-behavior.sh`. The test stubs external commands, exercises image preparation, config generation, VM startup command construction, config apply, bootstrap, and validation flows without network, real Tailscale credentials, or VM startup. It also exposed and fixed `.env` precedence/parsing behavior so explicit environment variables override `.env` and quoted values parse correctly. Verified `make test` passes.
 <!-- SECTION:NOTES:END -->
+
+## Definition of Done
+<!-- DOD:BEGIN -->
+- [x] #1 TDD is followed for future changes: add or update the relevant test/validation target before changing implementation, then make it pass.
+- [x] #2 `make test` passes before the task is marked Done.
+<!-- DOD:END -->

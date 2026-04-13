@@ -33,6 +33,14 @@ IPs and etcd advertised addresses prefer the Tailscale CGNAT range
 The auth key is read from `TS_AUTHKEY` in the environment or from `.env`.
 Do not commit `.env`.
 
+## Development requirement
+
+Use TDD for changes to this harness. Add or update the relevant validation first,
+usually through `make test`, then change the implementation and make the test
+pass. Run `make test` before considering a change complete. The test target runs
+plain Bash tests with stubbed external commands, so it does not read `.env`, use
+a real Tailscale auth key, download images, or start VMs.
+
 ## Setup
 
 ```bash
