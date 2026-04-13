@@ -33,6 +33,30 @@ IPs and etcd advertised addresses prefer the Tailscale CGNAT range
 The auth key is read from `TS_AUTHKEY` in the environment or from `.env`.
 Do not commit `.env`.
 
+## Create a Tailscale auth key
+
+In the Tailscale admin console, open the Keys page and generate an auth key.
+You must have permission to manage auth keys in the tailnet.
+
+Recommended options for this local test:
+
+- Reusable: enabled, because the same key is used by all three Talos nodes.
+- Ephemeral: enabled, so test nodes are removed from the tailnet after they go
+  offline.
+- Pre-approved: enabled if your tailnet requires device approval.
+- Tags: optional. If you use tags, make sure your ACLs allow the tagged nodes to
+  reach each other and the host where you run `talosctl`.
+
+Copy the generated key into `.env`:
+
+```bash
+TS_AUTHKEY=tskey-auth-...
+```
+
+Reusable auth keys are sensitive. Keep `.env` local, do not paste the key into
+shell history, and revoke the key from the Keys page after the test if you no
+longer need it.
+
 ## Development requirement
 
 Use TDD for changes to this harness. Add or update the relevant validation first,
