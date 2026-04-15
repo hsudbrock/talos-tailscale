@@ -94,6 +94,11 @@ Start the VMs:
 make start
 ```
 
+The VM boot order prefers disk first and falls back to the Talos ISO. On a fresh
+empty disk, QEMU boots the ISO so Talos can install. After `make apply` installs
+Talos to the VM disk and reboots, the same VM boots from disk instead of falling
+back into ISO maintenance mode.
+
 By default, `make start` exposes localhost-only VNC for each VM. Connect a VNC
 client to:
 
@@ -151,6 +156,10 @@ the host CPU directly, set this in `.env`:
 ```bash
 VM_CPU_MODEL=host
 ```
+
+The default install disk is `/dev/vda` because the QEMU disk is attached as a
+virtio block device. If you change the QEMU disk bus, update `INSTALL_DISK` in
+`.env` and rerun `make configs`.
 
 If you want to experiment with a different display device or explicit guest
 resolution, set these values in `.env`:
@@ -221,7 +230,17 @@ cluster:
   etcd:
     advertisedSubnets:
       - 100.64.0.0/10
+  network:
+    cni:
+      name: flannel
+      flannel:
+        extraArgs:
+          - --iface=tailscale0
 ```
+
+The flannel argument is required in this QEMU topology. Without it, flannel
+auto-detects the identical per-VM QEMU NAT address `10.0.2.15`, which breaks
+pod-to-pod and ClusterIP service routing.
 
 ## Validation checklist
 
@@ -238,6 +257,15 @@ The validation covers:
 - etcd membership and health
 - Kubernetes node readiness and InternalIP selection
 - A small cross-node workload and service reachability check
+
+To inspect Tailscale extension logs during bootstrap/debugging:
+
+```bash
+make logs-tailscale
+make logs-tailscale-cp1
+make logs-tailscale-cp2
+make logs-tailscale-cp3
+```
 
 For additional manual inspection:
 
@@ -266,6 +294,12 @@ Remove local runtime state:
 
 ```bash
 make clean
+```
+
+To keep the downloaded ISO and generated configs but reset the VM disks:
+
+```bash
+make clean-disks
 ```
 
 Remove ephemeral Tailscale devices from the admin console if your auth key did

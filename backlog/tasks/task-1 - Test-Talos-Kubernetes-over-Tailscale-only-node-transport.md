@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Codex
 created_date: '2026-04-13 20:24'
-updated_date: '2026-04-15 20:46'
+updated_date: '2026-04-15 21:43'
 labels:
   - talos
   - tailscale
@@ -64,6 +64,14 @@ Fix the functional test harness so `make test` never deletes or mutates the real
 Add a configurable QEMU display backend. Keep localhost VNC as the default headless-friendly mode, and add GTK mode using `-display gtk,zoom-to-fit=on` for readable local VM consoles. Document the `.env` switch and update tests for both VNC and GTK command generation.
 
 Add a configurable QEMU CPU model for Talos x86-64-v2 compatibility. Default to `max` so TCG emulation exposes a sufficiently modern CPU, and document when to use `host` if KVM is available.
+
+Fix QEMU boot ordering so the first boot can fall back to the ISO on an empty disk, but post-install reboots prefer the installed disk. Change from CD-ROM-first to disk-first-with-CD fallback and update functional tests/documentation.
+
+Fix Talos install disk for QEMU virtio disks. Default the install disk to `/dev/vda`, make it configurable via `INSTALL_DISK`, update config generation, documentation, tests, and local `.env`.
+
+Enable serial console logging in the Talos image so QEMU `-serial file:` receives boot logs. Add Talos Image Factory extra kernel args for `console=ttyS0` while retaining VGA console, update documentation and functional tests, and note that `make image` must be rerun.
+
+Add operator Makefile targets for common debugging and reset actions: tailscale extension logs per node and a disk cleanup target that stops VMs before removing `.state/disks`.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -102,6 +110,26 @@ Added `VM_DISPLAY_BACKEND` with `vnc` default and `gtk` option. GTK mode starts 
 User observed Talos boot failure: x86 microarchitecture level 2 required, emulated CPU only level 1. This is caused by QEMU's default CPU model. Update harness to pass an explicit CPU model.
 
 Added `VM_CPU_MODEL`, defaulting to `max`, and updated QEMU startup to pass `-cpu ${VM_CPU_MODEL}`. Also set local `.env` to `VM_CPU_MODEL=max` without printing secrets. This addresses Talos' x86-64-v2 requirement under QEMU TCG where the default CPU model reports only x86-64-v1. Verified `make test` passes.
+
+After `make apply`, nodes rebooted back into maintenance mode. The QEMU command used `-boot order=d`, so the ISO remained preferred over the installed disk. Change boot order to prefer disk after install.
+
+Changed QEMU boot order from `order=d` to `order=cd`: disk first with CD-ROM fallback. This lets empty disks boot the Talos ISO initially, then post-install reboots prefer the installed disk instead of returning to ISO maintenance mode. Updated README and functional tests; verified `make test` passes.
+
+Talos install failed because generated configs target `/dev/sda`, but QEMU starts the disk with `if=virtio`, which exposes it as `/dev/vda` in the guest. Update the harness to use `/dev/vda`.
+
+Fixed install disk mismatch. `INSTALL_DISK` now defaults to `/dev/vda`, `scripts/generate-configs.sh` passes it to `talosctl gen config --install-disk`, README explains why QEMU virtio disks use `/dev/vda`, and local `.env` was updated without printing secrets. Verified `make test` passes. Existing generated Talos configs must be regenerated with `make configs` before reapplying.
+
+User cannot read logs comfortably from the display. The existing QEMU serial log files are empty because the Talos image boots primarily on VGA. Add serial console kernel args to the generated image schematic so boot logs are written to the per-node serial log files.
+
+User requested Makefile targets for Tailscale logs and removing VM disks. Add these as non-secret operator helpers and cover them in docs/tests.
+
+Added Makefile targets `logs-tailscale`, `logs-tailscale-cp1`, `logs-tailscale-cp2`, `logs-tailscale-cp3`, and `clean-disks`. `clean-disks` depends on `stop` before removing `.state/disks`. README documents the targets, and functional tests assert their dry-run command output. Verified `make test` and `make help` pass.
+
+Observed live test state: Tailscale is running on all three VMs and Talos sees tailscale0 addresses. After `make apply`, etcd remains in Preparing before bootstrap, which is expected until the cluster is bootstrapped. Next user action is `make bootstrap`, then `make validate`.
+
+Fixed and verified bootstrap flow during live testing. `scripts/bootstrap.sh` now waits for the Talos API with `--endpoints 127.0.0.1:<port> --nodes 127.0.0.1` instead of waiting for full health before bootstrap. `make test` passes, live `make bootstrap` succeeds, and all three etcd members are healthy using Tailscale peer/client URLs.
+
+Fixed validation smoke workload for all-control-plane cluster and tailnet-only pod networking. The smoke deployment now tolerates control-plane taints, and generated Talos configs force flannel to use `--iface=tailscale0`; live cluster was patched and stale flannel `10.0.2.15` annotations were cleared. `make test` passes and live `make validate` now succeeds, with smoke pods spread across all three nodes and service DNS reachability confirmed.
 <!-- SECTION:NOTES:END -->
 
 ## Definition of Done

@@ -38,6 +38,12 @@ cluster:
   etcd:
     advertisedSubnets:
       - ${TAILSCALE_CIDR}
+  network:
+    cni:
+      name: flannel
+      flannel:
+        extraArgs:
+          - --iface=tailscale0
 YAML
 
 talosctl gen config \
@@ -45,7 +51,7 @@ talosctl gen config \
   "${CONTROL_PLANE_ENDPOINT}" \
   --output "${BASE_DIR}" \
   --output-types controlplane,talosconfig \
-  --install-disk /dev/sda \
+  --install-disk "${INSTALL_DISK}" \
   --install-image "${INSTALL_IMAGE}" \
   --kubernetes-version "${KUBERNETES_VERSION}" \
   --talos-version "${TALOS_VERSION}" \

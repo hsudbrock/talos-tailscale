@@ -22,19 +22,18 @@ fi
 export TALOSCONFIG
 export KUBECONFIG
 
-NODE_ARGS=()
+log "Checking Talos API over Tailscale hostnames"
 for node in "${NODES[@]}"; do
-  NODE_ARGS+=(--nodes "${node}")
+  talosctl --endpoints "${node}" --nodes "${node}" version
 done
 
-log "Checking Talos API over Tailscale hostnames"
-talosctl "${NODE_ARGS[@]}" version
-
 log "Checking Tailscale extension service"
-talosctl "${NODE_ARGS[@]}" service ext-tailscale
+for node in "${NODES[@]}"; do
+  talosctl --endpoints "${node}" --nodes "${node}" service ext-tailscale
+done
 
 log "Checking etcd health"
-talosctl "${NODE_ARGS[@]}" etcd members
+talosctl --endpoints "${NODES[0]}" --nodes "${NODES[0]}" etcd members
 
 log "Checking Kubernetes nodes and InternalIPs"
 kubectl get nodes -o wide
@@ -52,4 +51,5 @@ kubectl run tailnet-curl \
   -i \
   --restart=Never \
   --image=curlimages/curl:8.11.1 \
+  --overrides='{"spec":{"tolerations":[{"key":"node-role.kubernetes.io/control-plane","operator":"Exists","effect":"NoSchedule"},{"key":"node-role.kubernetes.io/master","operator":"Exists","effect":"NoSchedule"}]}}' \
   --command -- curl -fsS http://tailnet-smoke.default.svc.cluster.local/

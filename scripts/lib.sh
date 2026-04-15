@@ -35,6 +35,7 @@ load_env() {
   : "${VM_CPUS:=2}"
   : "${VM_CPU_MODEL:=max}"
   : "${VM_DISK_GIB:=20}"
+  : "${INSTALL_DISK:=/dev/vda}"
   : "${HOST_API_BASE_PORT:=50001}"
   : "${HOST_K8S_BASE_PORT:=64431}"
   : "${VM_DISPLAY_BACKEND:=vnc}"

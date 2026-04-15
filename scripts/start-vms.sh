@@ -55,7 +55,7 @@ for node in "${NODES[@]}"; do
     -m "${VM_MEMORY_MIB}" \
     -drive "file=${disk},format=qcow2,if=virtio" \
     -cdrom "${ISO_FILE}" \
-    -boot order=d \
+    -boot order=cd \
     -netdev "user,id=net${idx},hostname=${node},hostfwd=tcp:127.0.0.1:${api_port}-:50000,hostfwd=tcp:127.0.0.1:${k8s_port}-:6443" \
     -device "virtio-net-pci,netdev=net${idx}" \
     "${display_device_args[@]}" \

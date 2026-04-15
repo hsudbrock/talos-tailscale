@@ -17,12 +17,21 @@ fi
 export TALOSCONFIG
 
 log "Waiting for Talos API on first node localhost:${FIRST_PORT}"
-talosctl --nodes "127.0.0.1:${FIRST_PORT}" health --wait-timeout 20m --server=false
+for attempt in {1..120}; do
+  if talosctl --endpoints "127.0.0.1:${FIRST_PORT}" --nodes 127.0.0.1 version >/dev/null 2>&1; then
+    break
+  fi
+  if [[ "${attempt}" == 120 ]]; then
+    echo "Talos API did not become ready on localhost:${FIRST_PORT}" >&2
+    exit 1
+  fi
+  sleep 2
+done
 
 log "Bootstrapping etcd on ${FIRST_NODE}"
-talosctl --nodes "127.0.0.1:${FIRST_PORT}" bootstrap
+talosctl --endpoints "127.0.0.1:${FIRST_PORT}" --nodes 127.0.0.1 bootstrap
 
 log "Fetching kubeconfig"
-talosctl --nodes "127.0.0.1:${FIRST_PORT}" kubeconfig "$(state_path kubeconfig/config)" --merge=false --force
+talosctl --endpoints "127.0.0.1:${FIRST_PORT}" --nodes 127.0.0.1 kubeconfig "$(state_path kubeconfig/config)" --merge=false --force
 
 log "Bootstrap requested. Use scripts/validate.sh once all nodes have joined Tailscale."

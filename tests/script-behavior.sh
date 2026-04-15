@@ -235,6 +235,9 @@ done
 assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "validSubnets:"
 assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "advertisedSubnets:"
 assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "100.64.0.0/10"
+assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "flannel:"
+assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "--iface=tailscale0"
+assert_log_contains "--install-disk /dev/vda"
 
 VM_DISPLAY_BACKEND=vnc VM_DISPLAY_DEVICE=VGA VM_DISPLAY_WIDTH= VM_DISPLAY_HEIGHT= scripts/start-vms.sh
 for idx in 1 2 3; do
@@ -244,6 +247,7 @@ for idx in 1 2 3; do
 done
 assert_log_contains "hostfwd=tcp:127.0.0.1:50001-:50000"
 assert_log_contains "hostfwd=tcp:127.0.0.1:64431-:6443"
+assert_log_contains "-boot order=cd"
 assert_log_contains "-cpu max"
 assert_log_contains "-display vnc=127.0.0.1:1"
 assert_log_contains "-display vnc=127.0.0.1:2"
@@ -261,14 +265,33 @@ assert_log_contains "${TEST_STATE_DIR}/talos/generated/talos-ts-cp1.yaml"
 
 scripts/bootstrap.sh
 assert_file "${TEST_STATE_DIR}/kubeconfig/config"
+assert_log_contains "--endpoints 127.0.0.1:50001 --nodes 127.0.0.1 version"
+assert_log_contains "--endpoints 127.0.0.1:50001 --nodes 127.0.0.1 bootstrap"
+assert_log_contains "--endpoints 127.0.0.1:50001 --nodes 127.0.0.1 kubeconfig"
 assert_log_contains "bootstrap"
 assert_log_contains "kubeconfig"
 
 scripts/validate.sh
+assert_log_contains "--endpoints talos-ts-cp1 --nodes talos-ts-cp1 version"
+assert_log_contains "--endpoints talos-ts-cp2 --nodes talos-ts-cp2 version"
+assert_log_contains "--endpoints talos-ts-cp3 --nodes talos-ts-cp3 version"
 assert_log_contains "service ext-tailscale"
 assert_log_contains "etcd members"
 assert_log_contains "kubectl get nodes -o wide"
 assert_log_contains "kubectl apply -f"
+assert_contains "${ROOT_DIR}/config/kubernetes/cross-node-smoke.yaml" "node-role.kubernetes.io/control-plane"
+assert_log_contains "--overrides="
+assert_log_contains "node-role.kubernetes.io/master"
 assert_log_contains "curl -fsS http://tailnet-smoke.default.svc.cluster.local/"
+
+make -n logs-tailscale > "${TMP_DIR}/make-logs-tailscale.txt"
+assert_contains "${TMP_DIR}/make-logs-tailscale.txt" "127.0.0.1:50001"
+assert_contains "${TMP_DIR}/make-logs-tailscale.txt" "127.0.0.1:50002"
+assert_contains "${TMP_DIR}/make-logs-tailscale.txt" "127.0.0.1:50003"
+assert_contains "${TMP_DIR}/make-logs-tailscale.txt" "logs ext-tailscale --tail 120"
+
+make -n clean-disks > "${TMP_DIR}/make-clean-disks.txt"
+assert_contains "${TMP_DIR}/make-clean-disks.txt" "scripts/stop-vms.sh"
+assert_contains "${TMP_DIR}/make-clean-disks.txt" "rm -rf .state/disks"
 
 echo "script behavior tests passed"

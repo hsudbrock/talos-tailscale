@@ -2,7 +2,7 @@ SHELL := /usr/bin/env bash
 
 .DEFAULT_GOAL := help
 
-.PHONY: help env image configs start apply bootstrap validate stop clean reset test test-local vnc-cp1 vnc-cp2 vnc-cp3
+.PHONY: help env image configs start apply bootstrap validate stop clean clean-disks reset test test-local vnc-cp1 vnc-cp2 vnc-cp3 logs-tailscale logs-tailscale-cp1 logs-tailscale-cp2 logs-tailscale-cp3
 
 help:
 	@printf 'Talos over Tailscale local test targets:\n\n'
@@ -15,8 +15,10 @@ help:
 	@printf '  make validate   Validate Talos, Kubernetes, etcd, and smoke workload\n'
 	@printf '  make stop       Stop the QEMU VMs\n'
 	@printf '  make clean      Remove generated .state after stopping VMs\n'
+	@printf '  make clean-disks Stop VMs and remove only VM disks\n'
 	@printf '  make test       Run local non-secret validation checks\n'
 	@printf '  make vnc-cp1    Open talos-ts-cp1 VNC console with TigerVNC\n'
+	@printf '  make logs-tailscale Show ext-tailscale logs from all nodes\n'
 	@printf '\nTypical flow:\n'
 	@printf '  make env\n'
 	@printf '  $$EDITOR .env\n'
@@ -54,6 +56,9 @@ stop:
 clean: stop
 	rm -rf .state
 
+clean-disks: stop
+	rm -rf .state/disks
+
 reset: clean
 
 test: test-local
@@ -70,3 +75,29 @@ vnc-cp2:
 
 vnc-cp3:
 	xtigervncviewer -RemoteResize=0 127.0.0.1::5903
+
+logs-tailscale: logs-tailscale-cp1 logs-tailscale-cp2 logs-tailscale-cp3
+
+logs-tailscale-cp1:
+	@for attempt in {1..10}; do \
+		talosctl --talosconfig .state/talos/generated/talosconfig --endpoints 127.0.0.1:50001 --nodes 127.0.0.1 logs ext-tailscale --tail 120 && exit 0; \
+		echo "ext-tailscale logs for cp1 not ready yet; retrying ($$attempt/10)..." >&2; \
+		sleep 2; \
+	done; \
+	exit 1
+
+logs-tailscale-cp2:
+	@for attempt in {1..10}; do \
+		talosctl --talosconfig .state/talos/generated/talosconfig --endpoints 127.0.0.1:50002 --nodes 127.0.0.1 logs ext-tailscale --tail 120 && exit 0; \
+		echo "ext-tailscale logs for cp2 not ready yet; retrying ($$attempt/10)..." >&2; \
+		sleep 2; \
+	done; \
+	exit 1
+
+logs-tailscale-cp3:
+	@for attempt in {1..10}; do \
+		talosctl --talosconfig .state/talos/generated/talosconfig --endpoints 127.0.0.1:50003 --nodes 127.0.0.1 logs ext-tailscale --tail 120 && exit 0; \
+		echo "ext-tailscale logs for cp3 not ready yet; retrying ($$attempt/10)..." >&2; \
+		sleep 2; \
+	done; \
+	exit 1
