@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-STATE_DIR="${ROOT_DIR}/.state"
+STATE_DIR="${STATE_DIR:-${ROOT_DIR}/.state}"
 ENV_FILE="${ROOT_DIR}/.env"
 
 load_env() {
@@ -33,9 +33,19 @@ load_env() {
   : "${CONTROL_PLANE_ENDPOINT:=https://talos-ts-cp1:6443}"
   : "${VM_MEMORY_MIB:=4096}"
   : "${VM_CPUS:=2}"
+  : "${VM_CPU_MODEL:=max}"
   : "${VM_DISK_GIB:=20}"
   : "${HOST_API_BASE_PORT:=50001}"
   : "${HOST_K8S_BASE_PORT:=64431}"
+  : "${VM_DISPLAY_BACKEND:=vnc}"
+  : "${HOST_VNC_BASE_DISPLAY:=1}"
+  : "${VM_DISPLAY_DEVICE:=VGA}"
+  if [[ -z "${VM_DISPLAY_WIDTH+x}" ]]; then
+    VM_DISPLAY_WIDTH=""
+  fi
+  if [[ -z "${VM_DISPLAY_HEIGHT+x}" ]]; then
+    VM_DISPLAY_HEIGHT=""
+  fi
 
   read -r -a NODES <<< "${NODE_NAMES}"
 }
@@ -75,6 +85,14 @@ api_port_for_index() {
 
 k8s_port_for_index() {
   echo "$((HOST_K8S_BASE_PORT + $1 - 1))"
+}
+
+vnc_display_for_index() {
+  echo "$((HOST_VNC_BASE_DISPLAY + $1 - 1))"
+}
+
+vnc_port_for_index() {
+  echo "$((5900 + $(vnc_display_for_index "$1")))"
 }
 
 state_path() {

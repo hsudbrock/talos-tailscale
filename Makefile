@@ -2,7 +2,7 @@ SHELL := /usr/bin/env bash
 
 .DEFAULT_GOAL := help
 
-.PHONY: help env image configs start apply bootstrap validate stop clean reset test test-local
+.PHONY: help env image configs start apply bootstrap validate stop clean reset test test-local vnc-cp1 vnc-cp2 vnc-cp3
 
 help:
 	@printf 'Talos over Tailscale local test targets:\n\n'
@@ -16,6 +16,7 @@ help:
 	@printf '  make stop       Stop the QEMU VMs\n'
 	@printf '  make clean      Remove generated .state after stopping VMs\n'
 	@printf '  make test       Run local non-secret validation checks\n'
+	@printf '  make vnc-cp1    Open talos-ts-cp1 VNC console with TigerVNC\n'
 	@printf '\nTypical flow:\n'
 	@printf '  make env\n'
 	@printf '  $$EDITOR .env\n'
@@ -60,3 +61,12 @@ test: test-local
 test-local:
 	bash -n scripts/lib.sh scripts/prepare-image.sh scripts/generate-configs.sh scripts/start-vms.sh scripts/apply-configs.sh scripts/bootstrap.sh scripts/validate.sh scripts/stop-vms.sh
 	bash tests/script-behavior.sh
+
+vnc-cp1:
+	xtigervncviewer -RemoteResize=0 127.0.0.1::5901
+
+vnc-cp2:
+	xtigervncviewer -RemoteResize=0 127.0.0.1::5902
+
+vnc-cp3:
+	xtigervncviewer -RemoteResize=0 127.0.0.1::5903

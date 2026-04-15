@@ -19,6 +19,7 @@ IPs and etcd advertised addresses prefer the Tailscale CGNAT range
 - VM networking: separate QEMU user-mode network per VM
 - First-boot access: localhost Talos API forwards only
 - Steady-state access: Tailscale MagicDNS hostnames
+- VM screens: localhost-only VNC displays
 
 ## Prerequisites
 
@@ -91,6 +92,73 @@ Start the VMs:
 
 ```bash
 make start
+```
+
+By default, `make start` exposes localhost-only VNC for each VM. Connect a VNC
+client to:
+
+| Node | VNC address |
+| --- | --- |
+| `talos-ts-cp1` | `127.0.0.1:5901` |
+| `talos-ts-cp2` | `127.0.0.1:5902` |
+| `talos-ts-cp3` | `127.0.0.1:5903` |
+
+These VNC listeners are bound to localhost only. They show the QEMU VGA output;
+Talos does not provide an interactive login shell, so operational debugging
+still happens through `talosctl`.
+
+The default VNC console uses QEMU `VGA`. With TigerVNC, use the helper targets
+so the viewer opens fullscreen and does not ask the VM to resize its framebuffer:
+
+```bash
+make vnc-cp1
+make vnc-cp2
+make vnc-cp3
+```
+
+You can also run the viewer directly:
+
+```bash
+xtigervncviewer -FullScreen -RemoteResize=0 127.0.0.1::5901
+```
+
+Use the F8 menu to leave fullscreen. If the text is still small, the remaining
+control is in the VNC client: disable remote resize and use client-side scaling
+or fullscreen.
+
+If the VNC console is still too small to read, use QEMU's local GTK display
+backend instead. Add this to `.env`, then restart the VMs from your desktop
+session:
+
+```bash
+VM_DISPLAY_BACKEND=gtk
+```
+
+Then run:
+
+```bash
+make stop
+make start
+```
+
+GTK mode opens one QEMU window per VM with `zoom-to-fit=on`. It is intended for
+local interactive debugging and does not use the VNC ports.
+
+The default CPU model is `max` because Talos requires x86-64-v2 and QEMU's
+default emulated CPU can be too old. If KVM is available and you want to expose
+the host CPU directly, set this in `.env`:
+
+```bash
+VM_CPU_MODEL=host
+```
+
+If you want to experiment with a different display device or explicit guest
+resolution, set these values in `.env`:
+
+```bash
+VM_DISPLAY_DEVICE=qxl-vga
+VM_DISPLAY_WIDTH=1280
+VM_DISPLAY_HEIGHT=800
 ```
 
 Apply machine configs through the localhost Talos API forwards:

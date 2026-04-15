@@ -5,16 +5,22 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="$(mktemp -d)"
 FAKE_BIN="${TMP_DIR}/bin"
 CALL_LOG="${TMP_DIR}/calls.log"
+TEST_STATE_DIR="${TMP_DIR}/state"
 export CALL_LOG
+export STATE_DIR="${TEST_STATE_DIR}"
 
 cleanup() {
   rm -rf "${TMP_DIR}"
-  rm -rf "${ROOT_DIR}/.state"
 }
 trap cleanup EXIT
 
 fail() {
   echo "FAIL: $*" >&2
+  if [[ -f "${CALL_LOG}" ]]; then
+    echo "--- command log ---" >&2
+    cat "${CALL_LOG}" >&2
+    echo "--- end command log ---" >&2
+  fi
   exit 1
 }
 
@@ -30,7 +36,7 @@ assert_contains() {
 
 assert_log_contains() {
   local expected="$1"
-  sed 's/\\ / /g' "${CALL_LOG}" | grep -Fq -- "${expected}" ||
+  sed 's/\\ / /g; s/\\,/,/g' "${CALL_LOG}" | grep -Fq -- "${expected}" ||
     fail "expected call log to contain: ${expected}"
 }
 
@@ -208,45 +214,53 @@ write_fake_bin
 export PATH="${FAKE_BIN}:${PATH}"
 cd "${ROOT_DIR}"
 
-rm -rf .state
 rm -f "${CALL_LOG}"
 
 scripts/prepare-image.sh
-assert_file ".state/schematic.yaml"
-assert_file ".state/schematic.id"
-assert_file ".state/assets/talos-v1.11.5-tailscale-metal-amd64.iso"
-assert_contains ".state/schematic.yaml" "siderolabs/tailscale"
-assert_contains ".state/schematic.id" "test-schematic"
+assert_file "${TEST_STATE_DIR}/schematic.yaml"
+assert_file "${TEST_STATE_DIR}/schematic.id"
+assert_file "${TEST_STATE_DIR}/assets/talos-v1.11.5-tailscale-metal-amd64.iso"
+assert_contains "${TEST_STATE_DIR}/schematic.yaml" "siderolabs/tailscale"
+assert_contains "${TEST_STATE_DIR}/schematic.id" "test-schematic"
 
 TS_AUTHKEY=tskey-auth-test scripts/generate-configs.sh
 for node in talos-ts-cp1 talos-ts-cp2 talos-ts-cp3; do
-  config=".state/talos/generated/${node}.yaml"
+  config="${TEST_STATE_DIR}/talos/generated/${node}.yaml"
   assert_file "${config}"
   assert_contains "${config}" "kind: ExtensionServiceConfig"
   assert_contains "${config}" "TS_AUTHKEY=tskey-auth-test"
   assert_contains "${config}" "TS_HOSTNAME=${node}"
   assert_contains "${config}" "hostname: ${node}"
 done
-assert_contains ".state/patches/common.yaml" "validSubnets:"
-assert_contains ".state/patches/common.yaml" "advertisedSubnets:"
-assert_contains ".state/patches/common.yaml" "100.64.0.0/10"
+assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "validSubnets:"
+assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "advertisedSubnets:"
+assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "100.64.0.0/10"
 
-scripts/start-vms.sh
+VM_DISPLAY_BACKEND=vnc VM_DISPLAY_DEVICE=VGA VM_DISPLAY_WIDTH= VM_DISPLAY_HEIGHT= scripts/start-vms.sh
 for idx in 1 2 3; do
   node="talos-ts-cp${idx}"
-  assert_file ".state/disks/${node}.qcow2"
-  assert_file ".state/${node}.pid"
+  assert_file "${TEST_STATE_DIR}/disks/${node}.qcow2"
+  assert_file "${TEST_STATE_DIR}/${node}.pid"
 done
 assert_log_contains "hostfwd=tcp:127.0.0.1:50001-:50000"
 assert_log_contains "hostfwd=tcp:127.0.0.1:64431-:6443"
+assert_log_contains "-cpu max"
+assert_log_contains "-display vnc=127.0.0.1:1"
+assert_log_contains "-display vnc=127.0.0.1:2"
+assert_log_contains "-display vnc=127.0.0.1:3"
+assert_log_contains "-device VGA"
+
+rm -rf "${TEST_STATE_DIR}/disks" "${TEST_STATE_DIR}"/*.pid
+VM_DISPLAY_BACKEND=gtk VM_DISPLAY_DEVICE=VGA VM_DISPLAY_WIDTH= VM_DISPLAY_HEIGHT= scripts/start-vms.sh
+assert_log_contains "-display gtk,zoom-to-fit=on,show-menubar=on"
 
 scripts/apply-configs.sh
 assert_log_contains "apply-config"
 assert_log_contains "127.0.0.1:50001"
-assert_log_contains ".state/talos/generated/talos-ts-cp1.yaml"
+assert_log_contains "${TEST_STATE_DIR}/talos/generated/talos-ts-cp1.yaml"
 
 scripts/bootstrap.sh
-assert_file ".state/kubeconfig/config"
+assert_file "${TEST_STATE_DIR}/kubeconfig/config"
 assert_log_contains "bootstrap"
 assert_log_contains "kubeconfig"
 
