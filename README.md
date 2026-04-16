@@ -13,8 +13,8 @@ IPs and etcd advertised addresses prefer the Tailscale CGNAT range
 ## Topology
 
 - Cluster: `talos-tailnet-local`
-- Nodes: `talos-ts-cp1`, `talos-ts-cp2`, `talos-ts-cp3`
-- Role: all three nodes are Talos control planes
+- Control planes: `talos-ts-cp1`, `talos-ts-cp2`, `talos-ts-cp3`
+- Workers: `talos-ts-worker1`, `talos-ts-worker2`, `talos-ts-worker3`
 - Kubernetes endpoint: `https://talos-ts-cp1:6443`
 - VM networking: separate QEMU user-mode network per VM
 - First-boot access: localhost Talos API forwards only
@@ -41,7 +41,7 @@ You must have permission to manage auth keys in the tailnet.
 
 Recommended options for this local test:
 
-- Reusable: enabled, because the same key is used by all three Talos nodes.
+- Reusable: enabled, because the same key is used by all Talos nodes.
 - Ephemeral: enabled, so test nodes are removed from the tailnet after they go
   offline.
 - Pre-approved: enabled if your tailnet requires device approval.
@@ -73,8 +73,16 @@ make env
 $EDITOR .env
 ```
 
-Set `TS_AUTHKEY` to a valid auth key. The remaining defaults are suitable for
-the local 3-control-plane test.
+Set `TS_AUTHKEY` to a valid auth key. The remaining defaults create a
+3-control-plane plus 3-worker local test cluster.
+
+Older `.env` files may still have only `NODE_NAMES`. That continues to work as
+an all-control-plane topology. To add workers, replace it with:
+
+```bash
+CONTROL_PLANE_NODE_NAMES="talos-ts-cp1 talos-ts-cp2 talos-ts-cp3"
+WORKER_NODE_NAMES="talos-ts-worker1 talos-ts-worker2 talos-ts-worker3"
+```
 
 Build and download a Talos ISO with the official Tailscale system extension:
 
@@ -107,6 +115,9 @@ client to:
 | `talos-ts-cp1` | `127.0.0.1:5901` |
 | `talos-ts-cp2` | `127.0.0.1:5902` |
 | `talos-ts-cp3` | `127.0.0.1:5903` |
+| `talos-ts-worker1` | `127.0.0.1:5904` |
+| `talos-ts-worker2` | `127.0.0.1:5905` |
+| `talos-ts-worker3` | `127.0.0.1:5906` |
 
 These VNC listeners are bound to localhost only. They show the QEMU VGA output;
 Talos does not provide an interactive login shell, so operational debugging
@@ -119,6 +130,9 @@ so the viewer opens fullscreen and does not ask the VM to resize its framebuffer
 make vnc-cp1
 make vnc-cp2
 make vnc-cp3
+make vnc-worker1
+make vnc-worker2
+make vnc-worker3
 ```
 
 You can also run the viewer directly:
@@ -197,7 +211,8 @@ Runtime state is written under `.state/`:
 
 - `.state/assets/`: Talos ISO with the Tailscale extension
 - `.state/disks/`: QEMU node disks
-- `.state/talos/generated/`: generated per-node Talos configs
+- `.state/talos/generated/`: generated per-node Talos configs for control
+  planes and workers
 - `.state/kubeconfig/config`: Kubernetes client config
 - `.state/logs/`: QEMU serial logs
 
@@ -254,9 +269,10 @@ The validation covers:
 
 - Talos API access through Tailscale hostnames
 - `ext-tailscale` service status on every node
-- etcd membership and health
+- etcd membership and health on the control-plane nodes
 - Kubernetes node readiness and InternalIP selection
-- A small cross-node workload and service reachability check
+- A small workload scheduled by normal Kubernetes rules and service
+  reachability check
 
 To inspect Tailscale extension logs during bootstrap/debugging:
 
@@ -273,7 +289,7 @@ For additional manual inspection:
 export TALOSCONFIG=.state/talos/generated/talosconfig
 export KUBECONFIG=.state/kubeconfig/config
 
-talosctl --nodes talos-ts-cp1,talos-ts-cp2,talos-ts-cp3 service ext-tailscale
+talosctl --nodes talos-ts-cp1,talos-ts-cp2,talos-ts-cp3,talos-ts-worker1,talos-ts-worker2,talos-ts-worker3 service ext-tailscale
 talosctl --nodes talos-ts-cp1,talos-ts-cp2,talos-ts-cp3 etcd members
 kubectl get nodes -o wide
 kubectl get pods -l app=tailnet-smoke -o wide

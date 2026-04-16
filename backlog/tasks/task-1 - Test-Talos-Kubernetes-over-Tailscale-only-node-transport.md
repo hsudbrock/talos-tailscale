@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Codex
 created_date: '2026-04-13 20:24'
-updated_date: '2026-04-16 15:49'
+updated_date: '2026-04-16 16:10'
 labels:
   - talos
   - tailscale
@@ -72,6 +72,8 @@ Fix Talos install disk for QEMU virtio disks. Default the install disk to `/dev/
 Enable serial console logging in the Talos image so QEMU `-serial file:` receives boot logs. Add Talos Image Factory extra kernel args for `console=ttyS0` while retaining VGA console, update documentation and functional tests, and note that `make image` must be rerun.
 
 Add operator Makefile targets for common debugging and reset actions: tailscale extension logs per node and a disk cleanup target that stops VMs before removing `.state/disks`.
+
+Add configurable worker-node support. Separate control-plane node names from worker node names, generate worker machine configs when workers are enabled, start/apply/validate all nodes, and keep bootstrap/etcd checks scoped to control-plane nodes. Update docs and functional tests so a worker-backed default topology can run general workloads without control-plane tolerations.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -132,6 +134,10 @@ Fixed and verified bootstrap flow during live testing. `scripts/bootstrap.sh` no
 Fixed validation smoke workload for all-control-plane cluster and tailnet-only pod networking. The smoke deployment now tolerates control-plane taints, and generated Talos configs force flannel to use `--iface=tailscale0`; live cluster was patched and stale flannel `10.0.2.15` annotations were cleared. `make test` passes and live `make validate` now succeeds, with smoke pods spread across all three nodes and service DNS reachability confirmed.
 
 Updated validation cleanup behavior: `scripts/validate.sh` now deletes the `tailnet-smoke` Deployment and Service via an EXIT trap after validation. Added functional test assertions for the cleanup command. Verified `make test` passes, live `make validate` passes, and `kubectl get deploy,svc -l app=tailnet-smoke` returns no resources afterward.
+
+Added configurable worker-node support. The harness now separates `CONTROL_PLANE_NODE_NAMES` and `WORKER_NODE_NAMES`, generates both control-plane and worker Talos configs, starts/applies/validates all nodes, scopes bootstrap/etcd checks to control planes, and removes control-plane tolerations from the smoke workload so normal workloads schedule on workers. Verified `make test` passes and real `talosctl validate --mode metal` accepts both generated control-plane and worker configs with a dummy auth key.
+
+Expanded the default worker topology to three workers. Updated `.env`, the example env, README, Makefile helper targets, and functional tests for `talos-ts-worker1`, `talos-ts-worker2`, and `talos-ts-worker3` with API ports 50004-50006 and VNC ports 5904-5906. Verified `make test` passes and real `talosctl validate --mode metal` accepts generated control-plane and worker configs with the three-worker topology.
 <!-- SECTION:NOTES:END -->
 
 ## Definition of Done

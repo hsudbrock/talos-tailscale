@@ -29,7 +29,9 @@ load_env() {
   : "${TALOS_VERSION:=v1.11.5}"
   : "${KUBERNETES_VERSION:=1.34.1}"
   : "${TAILSCALE_CIDR:=100.64.0.0/10}"
-  : "${NODE_NAMES:=talos-ts-cp1 talos-ts-cp2 talos-ts-cp3}"
+  : "${CONTROL_PLANE_NODE_NAMES:=${NODE_NAMES:-talos-ts-cp1 talos-ts-cp2 talos-ts-cp3}}"
+  : "${WORKER_NODE_NAMES:=}"
+  NODE_NAMES="${CONTROL_PLANE_NODE_NAMES}${WORKER_NODE_NAMES:+ ${WORKER_NODE_NAMES}}"
   : "${CONTROL_PLANE_ENDPOINT:=https://talos-ts-cp1:6443}"
   : "${VM_MEMORY_MIB:=4096}"
   : "${VM_CPUS:=2}"
@@ -48,6 +50,8 @@ load_env() {
     VM_DISPLAY_HEIGHT=""
   fi
 
+  read -r -a CONTROL_PLANE_NODES <<< "${CONTROL_PLANE_NODE_NAMES}"
+  read -r -a WORKER_NODES <<< "${WORKER_NODE_NAMES}"
   read -r -a NODES <<< "${NODE_NAMES}"
 }
 

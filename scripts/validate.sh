@@ -39,12 +39,12 @@ for node in "${NODES[@]}"; do
 done
 
 log "Checking etcd health"
-talosctl --endpoints "${NODES[0]}" --nodes "${NODES[0]}" etcd members
+talosctl --endpoints "${CONTROL_PLANE_NODES[0]}" --nodes "${CONTROL_PLANE_NODES[0]}" etcd members
 
 log "Checking Kubernetes nodes and InternalIPs"
 kubectl get nodes -o wide
 
-log "Applying cross-node smoke workload"
+log "Applying smoke workload"
 kubectl apply -f "${ROOT_DIR}/config/kubernetes/cross-node-smoke.yaml"
 kubectl rollout status deployment/tailnet-smoke --timeout=5m
 
@@ -57,5 +57,4 @@ kubectl run tailnet-curl \
   -i \
   --restart=Never \
   --image=curlimages/curl:8.11.1 \
-  --overrides='{"spec":{"tolerations":[{"key":"node-role.kubernetes.io/control-plane","operator":"Exists","effect":"NoSchedule"},{"key":"node-role.kubernetes.io/master","operator":"Exists","effect":"NoSchedule"}]}}' \
   --command -- curl -fsS http://tailnet-smoke.default.svc.cluster.local/

@@ -161,6 +161,12 @@ machine:
     disk: /dev/sda
 cluster: {}
 YAML
+    cat > "${out}/worker.yaml" <<'YAML'
+machine:
+  install:
+    disk: /dev/sda
+cluster: {}
+YAML
     printf 'fake talosconfig\n' > "${out}/talosconfig"
     ;;
   machineconfig)
@@ -215,6 +221,9 @@ export PATH="${FAKE_BIN}:${PATH}"
 cd "${ROOT_DIR}"
 
 rm -f "${CALL_LOG}"
+export CONTROL_PLANE_NODE_NAMES="talos-ts-cp1 talos-ts-cp2 talos-ts-cp3"
+export WORKER_NODE_NAMES="talos-ts-worker1 talos-ts-worker2 talos-ts-worker3"
+export NODE_NAMES="${CONTROL_PLANE_NODE_NAMES} ${WORKER_NODE_NAMES}"
 
 scripts/prepare-image.sh
 assert_file "${TEST_STATE_DIR}/schematic.yaml"
@@ -224,7 +233,7 @@ assert_contains "${TEST_STATE_DIR}/schematic.yaml" "siderolabs/tailscale"
 assert_contains "${TEST_STATE_DIR}/schematic.id" "test-schematic"
 
 TS_AUTHKEY=tskey-auth-test scripts/generate-configs.sh
-for node in talos-ts-cp1 talos-ts-cp2 talos-ts-cp3; do
+for node in talos-ts-cp1 talos-ts-cp2 talos-ts-cp3 talos-ts-worker1 talos-ts-worker2 talos-ts-worker3; do
   config="${TEST_STATE_DIR}/talos/generated/${node}.yaml"
   assert_file "${config}"
   assert_contains "${config}" "kind: ExtensionServiceConfig"
@@ -232,16 +241,20 @@ for node in talos-ts-cp1 talos-ts-cp2 talos-ts-cp3; do
   assert_contains "${config}" "TS_HOSTNAME=${node}"
   assert_contains "${config}" "hostname: ${node}"
 done
+assert_log_contains "--output-types controlplane,worker,talosconfig"
+assert_log_contains "--config-patch-control-plane @${TEST_STATE_DIR}/patches/common.yaml"
+assert_log_contains "--config-patch-control-plane @${TEST_STATE_DIR}/patches/control-plane.yaml"
+assert_log_contains "--config-patch-worker @${TEST_STATE_DIR}/patches/common.yaml"
 assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "validSubnets:"
-assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "advertisedSubnets:"
 assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "100.64.0.0/10"
 assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "flannel:"
 assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "--iface=tailscale0"
+assert_contains "${TEST_STATE_DIR}/patches/control-plane.yaml" "advertisedSubnets:"
+assert_contains "${TEST_STATE_DIR}/patches/control-plane.yaml" "100.64.0.0/10"
 assert_log_contains "--install-disk /dev/vda"
 
 VM_DISPLAY_BACKEND=vnc VM_DISPLAY_DEVICE=VGA VM_DISPLAY_WIDTH= VM_DISPLAY_HEIGHT= scripts/start-vms.sh
-for idx in 1 2 3; do
-  node="talos-ts-cp${idx}"
+for node in talos-ts-cp1 talos-ts-cp2 talos-ts-cp3 talos-ts-worker1 talos-ts-worker2 talos-ts-worker3; do
   assert_file "${TEST_STATE_DIR}/disks/${node}.qcow2"
   assert_file "${TEST_STATE_DIR}/${node}.pid"
 done
@@ -252,16 +265,30 @@ assert_log_contains "-cpu max"
 assert_log_contains "-display vnc=127.0.0.1:1"
 assert_log_contains "-display vnc=127.0.0.1:2"
 assert_log_contains "-display vnc=127.0.0.1:3"
+assert_log_contains "-display vnc=127.0.0.1:4"
+assert_log_contains "-display vnc=127.0.0.1:5"
+assert_log_contains "-display vnc=127.0.0.1:6"
 assert_log_contains "-device VGA"
 
 rm -rf "${TEST_STATE_DIR}/disks" "${TEST_STATE_DIR}"/*.pid
 VM_DISPLAY_BACKEND=gtk VM_DISPLAY_DEVICE=VGA VM_DISPLAY_WIDTH= VM_DISPLAY_HEIGHT= scripts/start-vms.sh
 assert_log_contains "-display gtk,zoom-to-fit=on,show-menubar=on"
+assert_log_contains "-daemonize -pidfile"
+for node in talos-ts-cp1 talos-ts-cp2 talos-ts-cp3 talos-ts-worker1 talos-ts-worker2 talos-ts-worker3; do
+  assert_file "${TEST_STATE_DIR}/${node}.pid"
+  assert_file "${TEST_STATE_DIR}/logs/${node}.qemu.log"
+done
 
 scripts/apply-configs.sh
 assert_log_contains "apply-config"
 assert_log_contains "127.0.0.1:50001"
 assert_log_contains "${TEST_STATE_DIR}/talos/generated/talos-ts-cp1.yaml"
+assert_log_contains "127.0.0.1:50004"
+assert_log_contains "${TEST_STATE_DIR}/talos/generated/talos-ts-worker1.yaml"
+assert_log_contains "127.0.0.1:50005"
+assert_log_contains "${TEST_STATE_DIR}/talos/generated/talos-ts-worker2.yaml"
+assert_log_contains "127.0.0.1:50006"
+assert_log_contains "${TEST_STATE_DIR}/talos/generated/talos-ts-worker3.yaml"
 
 scripts/bootstrap.sh
 assert_file "${TEST_STATE_DIR}/kubeconfig/config"
@@ -275,21 +302,31 @@ scripts/validate.sh
 assert_log_contains "--endpoints talos-ts-cp1 --nodes talos-ts-cp1 version"
 assert_log_contains "--endpoints talos-ts-cp2 --nodes talos-ts-cp2 version"
 assert_log_contains "--endpoints talos-ts-cp3 --nodes talos-ts-cp3 version"
+assert_log_contains "--endpoints talos-ts-worker1 --nodes talos-ts-worker1 version"
+assert_log_contains "--endpoints talos-ts-worker2 --nodes talos-ts-worker2 version"
+assert_log_contains "--endpoints talos-ts-worker3 --nodes talos-ts-worker3 version"
 assert_log_contains "service ext-tailscale"
 assert_log_contains "etcd members"
 assert_log_contains "kubectl get nodes -o wide"
 assert_log_contains "kubectl apply -f"
 assert_log_contains "kubectl delete -f"
 assert_log_contains "--ignore-not-found"
-assert_contains "${ROOT_DIR}/config/kubernetes/cross-node-smoke.yaml" "node-role.kubernetes.io/control-plane"
-assert_log_contains "--overrides="
-assert_log_contains "node-role.kubernetes.io/master"
+assert_contains "${ROOT_DIR}/config/kubernetes/cross-node-smoke.yaml" "replicas: 2"
+if grep -Fq "node-role.kubernetes.io/control-plane" "${ROOT_DIR}/config/kubernetes/cross-node-smoke.yaml"; then
+  fail "smoke workload should schedule on workers without control-plane tolerations"
+fi
+if sed 's/\\ / /g; s/\\,/,/g' "${CALL_LOG}" | grep -Fq -- "--overrides="; then
+  fail "validation curl pod should schedule on workers without control-plane tolerations"
+fi
 assert_log_contains "curl -fsS http://tailnet-smoke.default.svc.cluster.local/"
 
 make -n logs-tailscale > "${TMP_DIR}/make-logs-tailscale.txt"
 assert_contains "${TMP_DIR}/make-logs-tailscale.txt" "127.0.0.1:50001"
 assert_contains "${TMP_DIR}/make-logs-tailscale.txt" "127.0.0.1:50002"
 assert_contains "${TMP_DIR}/make-logs-tailscale.txt" "127.0.0.1:50003"
+assert_contains "${TMP_DIR}/make-logs-tailscale.txt" "127.0.0.1:50004"
+assert_contains "${TMP_DIR}/make-logs-tailscale.txt" "127.0.0.1:50005"
+assert_contains "${TMP_DIR}/make-logs-tailscale.txt" "127.0.0.1:50006"
 assert_contains "${TMP_DIR}/make-logs-tailscale.txt" "logs ext-tailscale --tail 120"
 
 make -n clean-disks > "${TMP_DIR}/make-clean-disks.txt"

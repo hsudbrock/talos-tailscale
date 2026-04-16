@@ -6,7 +6,7 @@ load_env
 require_cmd talosctl
 
 TALOSCONFIG="$(state_path talos/generated/talosconfig)"
-FIRST_NODE="${NODES[0]}"
+FIRST_NODE="${CONTROL_PLANE_NODES[0]}"
 FIRST_PORT="$(api_port_for_index 1)"
 
 if [[ ! -f "${TALOSCONFIG}" ]]; then

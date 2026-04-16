@@ -2,14 +2,14 @@ SHELL := /usr/bin/env bash
 
 .DEFAULT_GOAL := help
 
-.PHONY: help env image configs start apply bootstrap validate stop clean clean-disks reset test test-local vnc-cp1 vnc-cp2 vnc-cp3 logs-tailscale logs-tailscale-cp1 logs-tailscale-cp2 logs-tailscale-cp3
+.PHONY: help env image configs start apply bootstrap validate stop clean clean-disks reset test test-local vnc-cp1 vnc-cp2 vnc-cp3 vnc-worker1 vnc-worker2 vnc-worker3 logs-tailscale logs-tailscale-cp1 logs-tailscale-cp2 logs-tailscale-cp3 logs-tailscale-worker1 logs-tailscale-worker2 logs-tailscale-worker3
 
 help:
 	@printf 'Talos over Tailscale local test targets:\n\n'
 	@printf '  make env        Create .env from the example if it does not exist\n'
 	@printf '  make image      Build/download Talos ISO with the Tailscale extension\n'
 	@printf '  make configs    Generate Talos configs from .env\n'
-	@printf '  make start      Start the three isolated QEMU VMs\n'
+	@printf '  make start      Start the isolated QEMU VMs\n'
 	@printf '  make apply      Apply Talos machine configs through localhost forwards\n'
 	@printf '  make bootstrap  Bootstrap etcd/Kubernetes and fetch kubeconfig\n'
 	@printf '  make validate   Validate Talos, Kubernetes, etcd, and smoke workload\n'
@@ -76,7 +76,16 @@ vnc-cp2:
 vnc-cp3:
 	xtigervncviewer -RemoteResize=0 127.0.0.1::5903
 
-logs-tailscale: logs-tailscale-cp1 logs-tailscale-cp2 logs-tailscale-cp3
+vnc-worker1:
+	xtigervncviewer -RemoteResize=0 127.0.0.1::5904
+
+vnc-worker2:
+	xtigervncviewer -RemoteResize=0 127.0.0.1::5905
+
+vnc-worker3:
+	xtigervncviewer -RemoteResize=0 127.0.0.1::5906
+
+logs-tailscale: logs-tailscale-cp1 logs-tailscale-cp2 logs-tailscale-cp3 logs-tailscale-worker1 logs-tailscale-worker2 logs-tailscale-worker3
 
 logs-tailscale-cp1:
 	@for attempt in {1..10}; do \
@@ -98,6 +107,30 @@ logs-tailscale-cp3:
 	@for attempt in {1..10}; do \
 		talosctl --talosconfig .state/talos/generated/talosconfig --endpoints 127.0.0.1:50003 --nodes 127.0.0.1 logs ext-tailscale --tail 120 && exit 0; \
 		echo "ext-tailscale logs for cp3 not ready yet; retrying ($$attempt/10)..." >&2; \
+		sleep 2; \
+	done; \
+	exit 1
+
+logs-tailscale-worker1:
+	@for attempt in {1..10}; do \
+		talosctl --talosconfig .state/talos/generated/talosconfig --endpoints 127.0.0.1:50004 --nodes 127.0.0.1 logs ext-tailscale --tail 120 && exit 0; \
+		echo "ext-tailscale logs for worker1 not ready yet; retrying ($$attempt/10)..." >&2; \
+		sleep 2; \
+	done; \
+	exit 1
+
+logs-tailscale-worker2:
+	@for attempt in {1..10}; do \
+		talosctl --talosconfig .state/talos/generated/talosconfig --endpoints 127.0.0.1:50005 --nodes 127.0.0.1 logs ext-tailscale --tail 120 && exit 0; \
+		echo "ext-tailscale logs for worker2 not ready yet; retrying ($$attempt/10)..." >&2; \
+		sleep 2; \
+	done; \
+	exit 1
+
+logs-tailscale-worker3:
+	@for attempt in {1..10}; do \
+		talosctl --talosconfig .state/talos/generated/talosconfig --endpoints 127.0.0.1:50006 --nodes 127.0.0.1 logs ext-tailscale --tail 120 && exit 0; \
+		echo "ext-tailscale logs for worker3 not ready yet; retrying ($$attempt/10)..." >&2; \
 		sleep 2; \
 	done; \
 	exit 1

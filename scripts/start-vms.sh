@@ -18,6 +18,7 @@ for node in "${NODES[@]}"; do
   disk="$(state_path "disks/${node}.qcow2")"
   pidfile="$(state_path "${node}.pid")"
   log_file="$(state_path "logs/${node}.log")"
+  qemu_log_file="$(state_path "logs/${node}.qemu.log")"
   api_port="$(api_port_for_index "${idx}")"
   k8s_port="$(k8s_port_for_index "${idx}")"
   vnc_display="$(vnc_display_for_index "${idx}")"
@@ -29,7 +30,7 @@ for node in "${NODES[@]}"; do
     display_device_args=(-device "${VM_DISPLAY_DEVICE},xres=${VM_DISPLAY_WIDTH},yres=${VM_DISPLAY_HEIGHT}")
   fi
   if [[ "${VM_DISPLAY_BACKEND}" == "gtk" ]]; then
-    display_args=(-display "gtk,zoom-to-fit=on,show-menubar=on" -pidfile "${pidfile}")
+    display_args=(-display "gtk,zoom-to-fit=on,show-menubar=on" -daemonize -pidfile "${pidfile}")
     display_label="GTK window"
   elif [[ "${VM_DISPLAY_BACKEND}" != "vnc" ]]; then
     echo "unsupported VM_DISPLAY_BACKEND=${VM_DISPLAY_BACKEND}; expected vnc or gtk" >&2
@@ -39,6 +40,8 @@ for node in "${NODES[@]}"; do
   if [[ -f "${pidfile}" ]] && kill -0 "$(<"${pidfile}")" 2>/dev/null; then
     log "${node} already running with pid $(<"${pidfile}")"
     continue
+  elif [[ -f "${pidfile}" ]]; then
+    rm -f "${pidfile}"
   fi
 
   if [[ ! -f "${disk}" ]]; then
@@ -63,11 +66,7 @@ for node in "${NODES[@]}"; do
     "${display_args[@]}"
   )
 
-  if [[ "${VM_DISPLAY_BACKEND}" == "gtk" ]]; then
-    "${qemu_cmd[@]}" &
-  else
-    "${qemu_cmd[@]}"
-  fi
+  "${qemu_cmd[@]}" 2>"${qemu_log_file}"
 done
 
 log "VMs are isolated by QEMU user-mode networking; no shared bridge is created."
