@@ -22,6 +22,12 @@ fi
 export TALOSCONFIG
 export KUBECONFIG
 
+cleanup_smoke_workload() {
+  kubectl delete -f "${ROOT_DIR}/config/kubernetes/cross-node-smoke.yaml" --ignore-not-found >/dev/null
+}
+
+trap cleanup_smoke_workload EXIT
+
 log "Checking Talos API over Tailscale hostnames"
 for node in "${NODES[@]}"; do
   talosctl --endpoints "${node}" --nodes "${node}" version

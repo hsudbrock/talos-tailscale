@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Codex
 created_date: '2026-04-13 20:24'
-updated_date: '2026-04-15 21:43'
+updated_date: '2026-04-16 15:49'
 labels:
   - talos
   - tailscale
@@ -130,6 +130,8 @@ Observed live test state: Tailscale is running on all three VMs and Talos sees t
 Fixed and verified bootstrap flow during live testing. `scripts/bootstrap.sh` now waits for the Talos API with `--endpoints 127.0.0.1:<port> --nodes 127.0.0.1` instead of waiting for full health before bootstrap. `make test` passes, live `make bootstrap` succeeds, and all three etcd members are healthy using Tailscale peer/client URLs.
 
 Fixed validation smoke workload for all-control-plane cluster and tailnet-only pod networking. The smoke deployment now tolerates control-plane taints, and generated Talos configs force flannel to use `--iface=tailscale0`; live cluster was patched and stale flannel `10.0.2.15` annotations were cleared. `make test` passes and live `make validate` now succeeds, with smoke pods spread across all three nodes and service DNS reachability confirmed.
+
+Updated validation cleanup behavior: `scripts/validate.sh` now deletes the `tailnet-smoke` Deployment and Service via an EXIT trap after validation. Added functional test assertions for the cleanup command. Verified `make test` passes, live `make validate` passes, and `kubectl get deploy,svc -l app=tailnet-smoke` returns no resources afterward.
 <!-- SECTION:NOTES:END -->
 
 ## Definition of Done
