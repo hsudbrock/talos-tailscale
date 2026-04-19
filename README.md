@@ -75,7 +75,8 @@ $EDITOR .env
 ```
 
 Set `TS_AUTHKEY` to a valid auth key. The remaining defaults create a
-3-control-plane plus 3-worker local test cluster.
+3-control-plane plus 3-worker local test cluster. Set `ARGOCD_REPO_URL` to a Git
+remote that the cluster can reach if you plan to run `make argocd`.
 
 Older `.env` files may still have only `NODE_NAMES`. That continues to work as
 an all-control-plane topology. To add workers, replace it with:
@@ -203,10 +204,45 @@ Validate the cluster over Tailscale:
 make validate
 ```
 
+Install Argo CD and hand off to the root GitOps Application:
+
+```bash
+make argocd
+make argocd-status
+```
+
+The Argo CD bootstrap downloads a pinned upstream install manifest into
+`.state/argocd/`, installs it into the `argocd` namespace, and applies a root
+`Application` pointing at:
+
+```bash
+${ARGOCD_REPO_URL}
+${ARGOCD_TARGET_REVISION}
+${ARGOCD_ROOT_PATH}
+```
+
+The default `ARGOCD_VERSION` is pinned in `.env` instead of using `latest`.
+Update it deliberately when you want to test a newer Argo CD release.
+Argo CD reads from the configured remote repository, not the local working tree,
+so commit and push the `gitops/` path before expecting the root Application to
+sync.
+
 Open k9s with the generated kubeconfig:
 
 ```bash
 make k9s
+```
+
+Open the Argo CD UI with a localhost port-forward:
+
+```bash
+make argocd-ui
+```
+
+Then browse to `https://localhost:8080`. Retrieve the initial admin password:
+
+```bash
+make argocd-password
 ```
 
 The Makefile targets are thin wrappers around the scripts in `scripts/`. Use the
@@ -221,6 +257,8 @@ Runtime state is written under `.state/`:
 - `.state/talos/generated/`: generated per-node Talos configs for control
   planes and workers
 - `.state/kubeconfig/config`: Kubernetes client config
+- `.state/argocd/`: downloaded Argo CD install manifest and rendered root
+  Application
 - `.state/logs/`: QEMU serial logs
 
 Generated Talos configs contain the Tailscale auth key. `.state/` is ignored by

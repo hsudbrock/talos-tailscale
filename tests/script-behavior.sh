@@ -66,6 +66,21 @@ if [[ "$*" == *"https://factory.talos.dev/image/test-schematic/v1.11.5/metal-amd
   printf 'fake iso\n' > "${out}"
   exit 0
 fi
+if [[ "$*" == *"https://raw.githubusercontent.com/argoproj/argo-cd/v3.3.6/manifests/install.yaml"* ]]; then
+  out=""
+  prev=""
+  for arg in "$@"; do
+    if [[ "${prev}" == "-o" ]]; then
+      out="${arg}"
+      break
+    fi
+    prev="${arg}"
+  done
+  [[ -n "${out}" ]]
+  mkdir -p "$(dirname "${out}")"
+  printf 'apiVersion: v1\nkind: List\nitems: []\n' > "${out}"
+  exit 0
+fi
 echo "unexpected curl args: $*" >&2
 exit 2
 SH
@@ -307,6 +322,24 @@ assert_log_contains "kubeconfig"
 PATH="${FAKE_BIN}:${PATH}" STATE_DIR="${TEST_STATE_DIR}" make --no-print-directory k9s
 assert_log_contains "k9s KUBECONFIG=${TEST_STATE_DIR}/kubeconfig/config args=''"
 
+ARGOCD_REPO_URL=https://github.com/example/talos-tailscale.git \
+ARGOCD_TARGET_REVISION=main \
+ARGOCD_ROOT_PATH=gitops/clusters/talos-tailnet-local/root \
+scripts/bootstrap-argocd.sh
+assert_file "${TEST_STATE_DIR}/argocd/namespace.yaml"
+assert_file "${TEST_STATE_DIR}/argocd/install-v3.3.6.yaml"
+assert_file "${TEST_STATE_DIR}/argocd/root-application.yaml"
+assert_contains "${TEST_STATE_DIR}/argocd/namespace.yaml" "name: argocd"
+assert_contains "${TEST_STATE_DIR}/argocd/root-application.yaml" "repoURL: https://github.com/example/talos-tailscale.git"
+assert_contains "${TEST_STATE_DIR}/argocd/root-application.yaml" "targetRevision: main"
+assert_contains "${TEST_STATE_DIR}/argocd/root-application.yaml" "path: gitops/clusters/talos-tailnet-local/root"
+assert_log_contains "curl -fsSL https://raw.githubusercontent.com/argoproj/argo-cd/v3.3.6/manifests/install.yaml -o ${TEST_STATE_DIR}/argocd/install-v3.3.6.yaml"
+assert_log_contains "kubectl apply -f ${TEST_STATE_DIR}/argocd/namespace.yaml"
+assert_log_contains "kubectl apply -n argocd --server-side --force-conflicts -f ${TEST_STATE_DIR}/argocd/install-v3.3.6.yaml"
+assert_log_contains "kubectl rollout status deployment/argocd-server --timeout=5m -n argocd"
+assert_log_contains "kubectl rollout status statefulset/argocd-application-controller --timeout=5m -n argocd"
+assert_log_contains "kubectl apply -f ${TEST_STATE_DIR}/argocd/root-application.yaml"
+
 scripts/validate.sh
 assert_log_contains "--endpoints talos-ts-cp1 --nodes talos-ts-cp1 version"
 assert_log_contains "--endpoints talos-ts-cp2 --nodes talos-ts-cp2 version"
@@ -341,5 +374,23 @@ assert_contains "${TMP_DIR}/make-logs-tailscale.txt" "logs ext-tailscale --tail 
 make -n clean-disks > "${TMP_DIR}/make-clean-disks.txt"
 assert_contains "${TMP_DIR}/make-clean-disks.txt" "scripts/stop-vms.sh"
 assert_contains "${TMP_DIR}/make-clean-disks.txt" "rm -rf .state/disks"
+
+make -n argocd-status > "${TMP_DIR}/make-argocd-status.txt"
+assert_contains "${TMP_DIR}/make-argocd-status.txt" "kubectl get pods,applications -n argocd"
+assert_contains "${TMP_DIR}/make-argocd-status.txt" "rollout status deployment/argocd-server"
+assert_contains "${TMP_DIR}/make-argocd-status.txt" "rollout status statefulset/argocd-application-controller"
+
+make -n argocd-password > "${TMP_DIR}/make-argocd-password.txt"
+assert_contains "${TMP_DIR}/make-argocd-password.txt" "argocd-initial-admin-secret"
+assert_contains "${TMP_DIR}/make-argocd-password.txt" "base64 -d"
+
+make -n argocd-ui > "${TMP_DIR}/make-argocd-ui.txt"
+assert_contains "${TMP_DIR}/make-argocd-ui.txt" "port-forward svc/argocd-server 8080:443"
+
+make help > "${TMP_DIR}/make-help.txt"
+assert_contains "${TMP_DIR}/make-help.txt" "make argocd     Install Argo CD and apply the root Application"
+assert_contains "${TMP_DIR}/make-help.txt" "make argocd-status Show Argo CD pods and rollout status"
+assert_contains "${TMP_DIR}/make-help.txt" "make argocd-ui  Port-forward the Argo CD API/UI to localhost:8080"
+assert_contains "${TMP_DIR}/make-help.txt" "make argocd-password Print the initial Argo CD admin password"
 
 echo "script behavior tests passed"

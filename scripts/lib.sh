@@ -49,6 +49,16 @@ load_env() {
   if [[ -z "${VM_DISPLAY_HEIGHT+x}" ]]; then
     VM_DISPLAY_HEIGHT=""
   fi
+  : "${ARGOCD_VERSION:=v3.3.6}"
+  : "${ARGOCD_NAMESPACE:=argocd}"
+  : "${ARGOCD_TARGET_REVISION:=main}"
+  : "${ARGOCD_ROOT_PATH:=gitops/clusters/${CLUSTER_NAME}/root}"
+  if [[ -z "${ARGOCD_REPO_URL+x}" ]]; then
+    ARGOCD_REPO_URL="$(git -C "${ROOT_DIR}" config --get remote.origin.url 2>/dev/null || true)"
+    if [[ "${ARGOCD_REPO_URL}" =~ ^git@github.com:(.+)$ ]]; then
+      ARGOCD_REPO_URL="https://github.com/${BASH_REMATCH[1]}"
+    fi
+  fi
 
   read -r -a CONTROL_PLANE_NODES <<< "${CONTROL_PLANE_NODE_NAMES}"
   read -r -a WORKER_NODES <<< "${WORKER_NODE_NAMES}"
@@ -105,7 +115,7 @@ state_path() {
 }
 
 ensure_state_dir() {
-  mkdir -p "${STATE_DIR}/"{assets,disks,logs,patches,talos,kubeconfig}
+  mkdir -p "${STATE_DIR}/"{assets,argocd,disks,logs,patches,talos,kubeconfig}
 }
 
 log() {
