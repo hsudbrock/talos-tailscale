@@ -5,12 +5,14 @@ status: To Do
 assignee:
   - Codex
 created_date: '2026-04-19 07:18'
+updated_date: '2026-04-19 07:22'
 labels:
   - talos
   - longhorn
   - storage
   - bootstrap
-dependencies: []
+dependencies:
+  - TASK-9
 documentation:
   - >-
     https://longhorn.io/docs/1.11.0/advanced-resources/os-distro-specific/talos-linux-support
@@ -31,3 +33,9 @@ Update the Talos image/config generation path so worker nodes can run Longhorn s
 - [ ] #4 make test covers the generated image schematic/config changes.
 - [ ] #5 README documents that make image, make configs, and machine config reapply are required before installing Longhorn.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Log cleanup should run before Longhorn preparation so storage and platform work starts from a quieter baseline.
+<!-- SECTION:NOTES:END -->
