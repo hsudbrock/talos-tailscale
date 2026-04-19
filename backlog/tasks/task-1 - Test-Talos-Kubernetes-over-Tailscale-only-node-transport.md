@@ -1,11 +1,11 @@
 ---
 id: TASK-1
 title: Test Talos Kubernetes over Tailscale-only node transport
-status: In Progress
+status: Done
 assignee:
   - Codex
 created_date: '2026-04-13 20:24'
-updated_date: '2026-04-16 16:10'
+updated_date: '2026-04-19 07:12'
 labels:
   - talos
   - tailscale
@@ -32,8 +32,8 @@ Validate that Talos Kubernetes nodes can be started from isolated networks and f
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 The repo documents the intended topology, prerequisites, setup, execution, validation, and teardown.
-- [ ] #2 Local QEMU VMs can be started with no shared VM-to-VM LAN path.
-- [ ] #3 A 3-control-plane Talos cluster can be generated and bootstrapped.
+- [x] #2 Local QEMU VMs can be started with no shared VM-to-VM LAN path.
+- [x] #3 A 3-control-plane Talos cluster can be generated and bootstrapped.
 - [x] #4 All Talos, Kubernetes, kubelet, and etcd node addressing is configured to prefer Tailscale 100.64.0.0/10 addresses.
 - [x] #5 The Tailscale auth key is supplied from the environment and is never committed.
 - [x] #6 Validation commands prove Talos API access, Kubernetes API access, etcd peer health, node IP selection, and cross-node workload behavior.
@@ -138,7 +138,15 @@ Updated validation cleanup behavior: `scripts/validate.sh` now deletes the `tail
 Added configurable worker-node support. The harness now separates `CONTROL_PLANE_NODE_NAMES` and `WORKER_NODE_NAMES`, generates both control-plane and worker Talos configs, starts/applies/validates all nodes, scopes bootstrap/etcd checks to control planes, and removes control-plane tolerations from the smoke workload so normal workloads schedule on workers. Verified `make test` passes and real `talosctl validate --mode metal` accepts both generated control-plane and worker configs with a dummy auth key.
 
 Expanded the default worker topology to three workers. Updated `.env`, the example env, README, Makefile helper targets, and functional tests for `talos-ts-worker1`, `talos-ts-worker2`, and `talos-ts-worker3` with API ports 50004-50006 and VNC ports 5904-5906. Verified `make test` passes and real `talosctl validate --mode metal` accepts generated control-plane and worker configs with the three-worker topology.
+
+Live end-to-end validation completed: local QEMU VMs started with isolated user-mode networking and no shared VM-to-VM bridge, a 3-control-plane plus 3-worker Talos cluster was generated, bootstrapped, and validated over Tailscale-only node transport. make validate passed with Talos API, Kubernetes node readiness, etcd peer health, Tailscale InternalIPs, and cross-node workload/service reachability.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Completed the Talos over Tailscale local test harness. The repo can build the Tailscale-enabled Talos image, generate configs, start isolated QEMU nodes, apply configs, bootstrap Kubernetes, and validate the cluster over Tailscale. Live validation passed for the expanded 3-control-plane plus 3-worker topology.
+<!-- SECTION:FINAL_SUMMARY:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->

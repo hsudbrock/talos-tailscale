@@ -4,7 +4,7 @@ KUBECONFIG ?= $(STATE_DIR)/kubeconfig/config
 
 .DEFAULT_GOAL := help
 
-.PHONY: help env image configs start apply bootstrap validate argocd argocd-status argocd-ui argocd-password k9s stop clean clean-disks reset test test-local vnc-cp1 vnc-cp2 vnc-cp3 vnc-worker1 vnc-worker2 vnc-worker3 logs-tailscale logs-tailscale-cp1 logs-tailscale-cp2 logs-tailscale-cp3 logs-tailscale-worker1 logs-tailscale-worker2 logs-tailscale-worker3
+.PHONY: help env image configs start apply bootstrap validate argocd argocd-status argocd-sync argocd-ui argocd-password k9s stop clean clean-disks reset test test-local vnc-cp1 vnc-cp2 vnc-cp3 vnc-worker1 vnc-worker2 vnc-worker3 logs-tailscale logs-tailscale-cp1 logs-tailscale-cp2 logs-tailscale-cp3 logs-tailscale-worker1 logs-tailscale-worker2 logs-tailscale-worker3
 
 help:
 	@printf 'Talos over Tailscale local test targets:\n\n'
@@ -17,6 +17,7 @@ help:
 	@printf '  make validate   Validate Talos, Kubernetes, etcd, and smoke workload\n'
 	@printf '  make argocd     Install Argo CD and apply the root Application\n'
 	@printf '  make argocd-status Show Argo CD pods and rollout status\n'
+	@printf '  make argocd-sync Trigger a hard refresh and sync of the root Application\n'
 	@printf '  make argocd-ui  Port-forward the Argo CD API/UI to localhost:8080\n'
 	@printf '  make argocd-password Print the initial Argo CD admin password\n'
 	@printf '  make k9s        Open k9s with the generated kubeconfig\n'
@@ -65,6 +66,12 @@ argocd-status:
 	KUBECONFIG="$(KUBECONFIG)" kubectl get pods,applications -n argocd
 	KUBECONFIG="$(KUBECONFIG)" kubectl rollout status deployment/argocd-server --timeout=5m -n argocd
 	KUBECONFIG="$(KUBECONFIG)" kubectl rollout status statefulset/argocd-application-controller --timeout=5m -n argocd
+
+argocd-sync:
+	@[[ -f "$(KUBECONFIG)" ]] || { echo "missing $(KUBECONFIG); run make bootstrap first" >&2; exit 1; }
+	KUBECONFIG="$(KUBECONFIG)" kubectl -n argocd annotate application talos-tailnet-local-root argocd.argoproj.io/refresh=hard --overwrite
+	KUBECONFIG="$(KUBECONFIG)" kubectl -n argocd patch application talos-tailnet-local-root --type merge -p '{"operation":{"sync":{"revision":"main","prune":true,"syncOptions":["CreateNamespace=true"]}}}'
+	KUBECONFIG="$(KUBECONFIG)" kubectl -n argocd get application talos-tailnet-local-root
 
 argocd-ui:
 	@[[ -f "$(KUBECONFIG)" ]] || { echo "missing $(KUBECONFIG); run make bootstrap first" >&2; exit 1; }

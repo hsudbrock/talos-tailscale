@@ -227,6 +227,12 @@ Argo CD reads from the configured remote repository, not the local working tree,
 so commit and push the `gitops/` path before expecting the root Application to
 sync.
 
+Force a hard refresh and sync of the root Application after pushing changes:
+
+```bash
+make argocd-sync
+```
+
 Open k9s with the generated kubeconfig:
 
 ```bash

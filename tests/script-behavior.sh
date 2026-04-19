@@ -380,6 +380,12 @@ assert_contains "${TMP_DIR}/make-argocd-status.txt" "kubectl get pods,applicatio
 assert_contains "${TMP_DIR}/make-argocd-status.txt" "rollout status deployment/argocd-server"
 assert_contains "${TMP_DIR}/make-argocd-status.txt" "rollout status statefulset/argocd-application-controller"
 
+make -n argocd-sync > "${TMP_DIR}/make-argocd-sync.txt"
+assert_contains "${TMP_DIR}/make-argocd-sync.txt" "annotate application talos-tailnet-local-root argocd.argoproj.io/refresh=hard --overwrite"
+assert_contains "${TMP_DIR}/make-argocd-sync.txt" "patch application talos-tailnet-local-root --type merge"
+assert_contains "${TMP_DIR}/make-argocd-sync.txt" '"operation":{"sync":{"revision":"main","prune":true,"syncOptions":["CreateNamespace=true"]}}'
+assert_contains "${TMP_DIR}/make-argocd-sync.txt" "get application talos-tailnet-local-root"
+
 make -n argocd-password > "${TMP_DIR}/make-argocd-password.txt"
 assert_contains "${TMP_DIR}/make-argocd-password.txt" "argocd-initial-admin-secret"
 assert_contains "${TMP_DIR}/make-argocd-password.txt" "base64 -d"
@@ -390,6 +396,7 @@ assert_contains "${TMP_DIR}/make-argocd-ui.txt" "port-forward svc/argocd-server 
 make help > "${TMP_DIR}/make-help.txt"
 assert_contains "${TMP_DIR}/make-help.txt" "make argocd     Install Argo CD and apply the root Application"
 assert_contains "${TMP_DIR}/make-help.txt" "make argocd-status Show Argo CD pods and rollout status"
+assert_contains "${TMP_DIR}/make-help.txt" "make argocd-sync Trigger a hard refresh and sync of the root Application"
 assert_contains "${TMP_DIR}/make-help.txt" "make argocd-ui  Port-forward the Argo CD API/UI to localhost:8080"
 assert_contains "${TMP_DIR}/make-help.txt" "make argocd-password Print the initial Argo CD admin password"
 

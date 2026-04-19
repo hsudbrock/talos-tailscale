@@ -1,11 +1,11 @@
 ---
 id: TASK-2
 title: Bootstrap Argo CD for GitOps handoff
-status: In Progress
+status: Done
 assignee:
   - Codex
 created_date: '2026-04-19 06:57'
-updated_date: '2026-04-19 07:05'
+updated_date: '2026-04-19 07:12'
 labels:
   - argocd
   - gitops
@@ -43,4 +43,12 @@ Implemented Argo CD bootstrap support. Added scripts/bootstrap-argocd.sh, Makefi
 Post-install live make validate also passes with Argo CD present. The smoke workload rolled out on worker nodes and service reachability succeeded.
 
 Fixed Makefile help coverage for the new Argo CD helper targets. Added test assertions that make help includes argocd, argocd-status, argocd-ui, and argocd-password. Verified make test passes.
+
+Added make argocd-sync to hard refresh and sync the root Application through kubectl. Covered the target and help output in tests. Verified make test passes and live make argocd-sync reports talos-tailnet-local-root as Synced and Healthy.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Completed the Argo CD GitOps handoff. The repo can install pinned Argo CD, render/apply the root Application, inspect status, open the UI by port-forward, print the initial password, and force a root Application refresh/sync through kubectl. make test passes and live Argo CD status is Synced/Healthy after push and argocd-sync.
+<!-- SECTION:FINAL_SUMMARY:END -->
