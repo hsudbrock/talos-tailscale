@@ -66,6 +66,58 @@ talosctl gen config \
   "${SAN_ARGS[@]}" \
   --force
 
+set_hostname_config() {
+  local config="$1"
+  local node="$2"
+  local tmp_config
+
+  if ! grep -Eq '^kind:[[:space:]]*HostnameConfig[[:space:]]*$' "${config}"; then
+    echo "${config} does not contain HostnameConfig; Talos ${TALOS_VERSION} is below the supported minimum" >&2
+    exit 1
+  fi
+
+  tmp_config="$(mktemp)"
+  awk -v node="${node}" '
+    /^---[[:space:]]*$/ {
+      if (in_hostname_config && !wrote_hostname) {
+        print "hostname: " node
+      }
+      in_hostname_config = 0
+      wrote_hostname = 0
+      print
+      next
+    }
+    /^kind:[[:space:]]*HostnameConfig[[:space:]]*$/ {
+      in_hostname_config = 1
+      print
+      next
+    }
+    in_hostname_config && /^auto:[[:space:]]*/ {
+      if (!wrote_hostname) {
+        print "hostname: " node
+        wrote_hostname = 1
+      }
+      next
+    }
+    in_hostname_config && /^hostname:[[:space:]]*/ {
+      if (!wrote_hostname) {
+        print "hostname: " node
+        wrote_hostname = 1
+      }
+      next
+    }
+    {
+      print
+    }
+    END {
+      if (in_hostname_config && !wrote_hostname) {
+        print "hostname: " node
+      }
+    }
+  ' "${config}" > "${tmp_config}"
+  mv "${tmp_config}" "${config}"
+}
+
 generate_node_config() {
   local node="$1"
   local base_config="$2"
@@ -74,10 +126,6 @@ generate_node_config() {
   idx="$(node_index "${node}")"
   patch_file="$(state_path "patches/nodes/${node}.yaml")"
   cat > "${patch_file}" <<YAML
-machine:
-  network:
-    hostname: ${node}
----
 apiVersion: v1alpha1
 kind: ExtensionServiceConfig
 name: tailscale
@@ -94,6 +142,7 @@ YAML
     --patch @"${patch_file}" \
     --output "${OUT_DIR}/${node}.yaml"
 
+  set_hostname_config "${OUT_DIR}/${node}.yaml" "${node}"
   log "Generated config for ${node}; first-boot Talos API: 127.0.0.1:$(api_port_for_index "${idx}")"
 }
 

@@ -34,6 +34,14 @@ assert_contains() {
   grep -Fq -- "${expected}" "${file}" || fail "expected ${file} to contain: ${expected}"
 }
 
+assert_not_contains() {
+  local file="$1"
+  local unexpected="$2"
+  if grep -Fq -- "${unexpected}" "${file}"; then
+    fail "expected ${file} not to contain: ${unexpected}"
+  fi
+}
+
 assert_log_contains() {
   local expected="$1"
   sed 's/\\ / /g; s/\\,/,/g' "${CALL_LOG}" | grep -Fq -- "${expected}" ||
@@ -51,7 +59,7 @@ if [[ "$*" == *"https://factory.talos.dev/schematics"* ]]; then
   printf '{"id":"test-schematic"}'
   exit 0
 fi
-if [[ "$*" == *"https://factory.talos.dev/image/test-schematic/v1.11.5/metal-amd64.iso"* ]]; then
+if [[ "$*" == *"https://factory.talos.dev/image/test-schematic/"*"/metal-amd64.iso"* ]]; then
   out=""
   prev=""
   for arg in "$@"; do
@@ -181,12 +189,20 @@ machine:
   install:
     disk: /dev/sda
 cluster: {}
+---
+apiVersion: v1alpha1
+kind: HostnameConfig
+auto: stable
 YAML
     cat > "${out}/worker.yaml" <<'YAML'
 machine:
   install:
     disk: /dev/sda
 cluster: {}
+---
+apiVersion: v1alpha1
+kind: HostnameConfig
+auto: stable
 YAML
     printf 'fake talosconfig\n' > "${out}/talosconfig"
     ;;
@@ -249,7 +265,8 @@ export NODE_NAMES="${CONTROL_PLANE_NODE_NAMES} ${WORKER_NODE_NAMES}"
 scripts/prepare-image.sh
 assert_file "${TEST_STATE_DIR}/schematic.yaml"
 assert_file "${TEST_STATE_DIR}/schematic.id"
-assert_file "${TEST_STATE_DIR}/assets/talos-v1.11.5-tailscale-metal-amd64.iso"
+compgen -G "${TEST_STATE_DIR}/assets/talos-v*-tailscale-metal-amd64.iso" >/dev/null ||
+  fail "expected downloaded Talos ISO asset"
 assert_contains "${TEST_STATE_DIR}/schematic.yaml" "siderolabs/tailscale"
 assert_contains "${TEST_STATE_DIR}/schematic.id" "test-schematic"
 
@@ -258,9 +275,12 @@ for node in talos-ts-cp1 talos-ts-cp2 talos-ts-cp3 talos-ts-worker1 talos-ts-wor
   config="${TEST_STATE_DIR}/talos/generated/${node}.yaml"
   assert_file "${config}"
   assert_contains "${config}" "kind: ExtensionServiceConfig"
+  assert_contains "${config}" "kind: HostnameConfig"
   assert_contains "${config}" "TS_AUTHKEY=tskey-auth-test"
   assert_contains "${config}" "TS_HOSTNAME=${node}"
   assert_contains "${config}" "hostname: ${node}"
+  assert_not_contains "${config}" "    hostname: ${node}"
+  assert_not_contains "${config}" "auto: stable"
 done
 assert_log_contains "--output-types controlplane,worker,talosconfig"
 assert_log_contains "--config-patch-control-plane @${TEST_STATE_DIR}/patches/common.yaml"
