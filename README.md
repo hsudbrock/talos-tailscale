@@ -27,6 +27,7 @@ IPs and etcd advertised addresses prefer the Tailscale CGNAT range
 - `qemu-system-x86_64`
 - `qemu-img`
 - `kubectl`
+- `k9s` for the optional `make k9s` target
 - `curl`
 - A Tailscale tailnet with MagicDNS enabled
 - A reusable or ephemeral Tailscale auth key
@@ -200,6 +201,12 @@ Validate the cluster over Tailscale:
 
 ```bash
 make validate
+```
+
+Open k9s with the generated kubeconfig:
+
+```bash
+make k9s
 ```
 
 The Makefile targets are thin wrappers around the scripts in `scripts/`. Use the

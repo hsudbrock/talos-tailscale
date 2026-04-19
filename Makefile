@@ -1,8 +1,10 @@
 SHELL := /usr/bin/env bash
+STATE_DIR ?= .state
+KUBECONFIG ?= $(STATE_DIR)/kubeconfig/config
 
 .DEFAULT_GOAL := help
 
-.PHONY: help env image configs start apply bootstrap validate stop clean clean-disks reset test test-local vnc-cp1 vnc-cp2 vnc-cp3 vnc-worker1 vnc-worker2 vnc-worker3 logs-tailscale logs-tailscale-cp1 logs-tailscale-cp2 logs-tailscale-cp3 logs-tailscale-worker1 logs-tailscale-worker2 logs-tailscale-worker3
+.PHONY: help env image configs start apply bootstrap validate k9s stop clean clean-disks reset test test-local vnc-cp1 vnc-cp2 vnc-cp3 vnc-worker1 vnc-worker2 vnc-worker3 logs-tailscale logs-tailscale-cp1 logs-tailscale-cp2 logs-tailscale-cp3 logs-tailscale-worker1 logs-tailscale-worker2 logs-tailscale-worker3
 
 help:
 	@printf 'Talos over Tailscale local test targets:\n\n'
@@ -13,6 +15,7 @@ help:
 	@printf '  make apply      Apply Talos machine configs through localhost forwards\n'
 	@printf '  make bootstrap  Bootstrap etcd/Kubernetes and fetch kubeconfig\n'
 	@printf '  make validate   Validate Talos, Kubernetes, etcd, and smoke workload\n'
+	@printf '  make k9s        Open k9s with the generated kubeconfig\n'
 	@printf '  make stop       Stop the QEMU VMs\n'
 	@printf '  make clean      Remove generated .state after stopping VMs\n'
 	@printf '  make clean-disks Stop VMs and remove only VM disks\n'
@@ -49,6 +52,11 @@ bootstrap:
 
 validate:
 	scripts/validate.sh
+
+k9s:
+	@command -v k9s >/dev/null || { echo "missing k9s; install it before running this target" >&2; exit 1; }
+	@[[ -f "$(KUBECONFIG)" ]] || { echo "missing $(KUBECONFIG); run make bootstrap first" >&2; exit 1; }
+	KUBECONFIG="$(KUBECONFIG)" k9s
 
 stop:
 	scripts/stop-vms.sh

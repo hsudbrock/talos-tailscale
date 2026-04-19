@@ -111,6 +111,12 @@ set -euo pipefail
 printf 'kubectl %q\n' "$*" >> "${CALL_LOG}"
 SH
 
+  cat > "${FAKE_BIN}/k9s" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'k9s KUBECONFIG=%q args=%q\n' "${KUBECONFIG:-}" "$*" >> "${CALL_LOG}"
+SH
+
 cat > "${FAKE_BIN}/talosctl" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -297,6 +303,9 @@ assert_log_contains "--endpoints 127.0.0.1:50001 --nodes 127.0.0.1 bootstrap"
 assert_log_contains "--endpoints 127.0.0.1:50001 --nodes 127.0.0.1 kubeconfig"
 assert_log_contains "bootstrap"
 assert_log_contains "kubeconfig"
+
+PATH="${FAKE_BIN}:${PATH}" STATE_DIR="${TEST_STATE_DIR}" make --no-print-directory k9s
+assert_log_contains "k9s KUBECONFIG=${TEST_STATE_DIR}/kubeconfig/config args=''"
 
 scripts/validate.sh
 assert_log_contains "--endpoints talos-ts-cp1 --nodes talos-ts-cp1 version"
