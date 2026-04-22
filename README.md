@@ -86,6 +86,22 @@ CONTROL_PLANE_NODE_NAMES="talos-ts-cp1 talos-ts-cp2 talos-ts-cp3"
 WORKER_NODE_NAMES="talos-ts-worker1 talos-ts-worker2 talos-ts-worker3"
 ```
 
+If you want Talos host DNS to resolve short MagicDNS names such as
+`talos-ts-cp1`, also set your tailnet search suffix:
+
+```bash
+TAILSCALE_SEARCH_DOMAIN=tail4d7760.ts.net
+```
+
+If you rebuild the cluster frequently and want to avoid stale MagicDNS name
+collisions in Tailscale, set a node suffix. A literal value is appended to all
+generated node names, and `random` generates a fresh short suffix for each
+`make bootstrap-from-scratch` run:
+
+```bash
+NODE_NAME_SUFFIX=random
+```
+
 Build and download a Talos ISO with the official Tailscale system extension:
 
 ```bash
@@ -204,6 +220,19 @@ Bootstrap Kubernetes:
 make bootstrap
 ```
 
+Rebuild the cluster from scratch on fresh disks and stop when Kubernetes has
+been bootstrapped:
+
+```bash
+make bootstrap-from-scratch
+```
+
+This target regenerates Talos configs, removes VM disks, starts the VMs, waits
+for every localhost Talos API forward to come up, applies the machine configs,
+waits again for the post-apply reboots to finish, and then bootstraps
+etcd/Kubernetes. When `NODE_NAME_SUFFIX=random`, this flow also refreshes the
+stored suffix first so the rebuilt nodes get fresh unique names.
+
 Validate the cluster over Tailscale:
 
 ```bash
@@ -288,6 +317,22 @@ environment:
   - TS_ACCEPT_DNS=true
   - TS_STATE_DIR=/var/lib/tailscale
   - TS_EXTRA_ARGS=--reset
+```
+
+They also include a Talos `ResolverConfig` so host DNS can forward MagicDNS
+queries to Tailscale while still keeping a public resolver available:
+
+```yaml
+apiVersion: v1alpha1
+kind: ResolverConfig
+nameservers:
+  - address: 100.100.100.100
+  - address: 9.9.9.9
+  - address: 1.1.1.1
+  - address: 8.8.8.8
+searchDomains:
+  domains:
+    - tail4d7760.ts.net
 ```
 
 The common Talos patch pins cluster-facing address selection to Tailscale:

@@ -48,6 +48,13 @@ assert_log_contains() {
     fail "expected call log to contain: ${expected}"
 }
 
+assert_log_not_contains() {
+  local unexpected="$1"
+  if sed 's/\\ / /g; s/\\,/,/g' "${CALL_LOG}" | grep -Fq -- "${unexpected}"; then
+    fail "expected call log not to contain: ${unexpected}"
+  fi
+}
+
 write_fake_bin() {
   mkdir -p "${FAKE_BIN}"
 
@@ -261,6 +268,8 @@ rm -f "${CALL_LOG}"
 export CONTROL_PLANE_NODE_NAMES="talos-ts-cp1 talos-ts-cp2 talos-ts-cp3"
 export WORKER_NODE_NAMES="talos-ts-worker1 talos-ts-worker2 talos-ts-worker3"
 export NODE_NAMES="${CONTROL_PLANE_NODE_NAMES} ${WORKER_NODE_NAMES}"
+export TAILSCALE_SEARCH_DOMAIN="tail4d7760.ts.net"
+export NODE_NAME_SUFFIX=""
 
 scripts/prepare-image.sh
 assert_file "${TEST_STATE_DIR}/schematic.yaml"
@@ -290,9 +299,28 @@ assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "validSubnets:"
 assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "100.64.0.0/10"
 assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "flannel:"
 assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "--iface=tailscale0"
+assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "kind: ResolverConfig"
+assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "address: 100.100.100.100"
+assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "address: 9.9.9.9"
+assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "address: 1.1.1.1"
+assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "address: 8.8.8.8"
+assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "tail4d7760.ts.net"
 assert_contains "${TEST_STATE_DIR}/patches/control-plane.yaml" "advertisedSubnets:"
 assert_contains "${TEST_STATE_DIR}/patches/control-plane.yaml" "100.64.0.0/10"
 assert_log_contains "--install-disk /dev/vda"
+
+SUFFIX_STATE_DIR="${TMP_DIR}/state-suffix"
+STATE_DIR="${SUFFIX_STATE_DIR}" scripts/prepare-image.sh
+NODE_NAME_SUFFIX=random STATE_DIR="${SUFFIX_STATE_DIR}" TS_AUTHKEY=tskey-auth-test scripts/generate-configs.sh
+suffix="$(<"${SUFFIX_STATE_DIR}/node-name-suffix")"
+assert_file "${SUFFIX_STATE_DIR}/node-name-suffix"
+assert_file "${SUFFIX_STATE_DIR}/talos/generated/talos-ts-cp1${suffix}.yaml"
+assert_contains "${SUFFIX_STATE_DIR}/talos/generated/talos-ts-cp1${suffix}.yaml" "TS_HOSTNAME=talos-ts-cp1${suffix}"
+assert_contains "${SUFFIX_STATE_DIR}/talos/generated/talos-ts-cp1${suffix}.yaml" "hostname: talos-ts-cp1${suffix}"
+assert_log_contains "gen config talos-tailnet-local https://talos-ts-cp1${suffix}:6443"
+
+NODE_NAME_SUFFIX=random STATE_DIR="${SUFFIX_STATE_DIR}" TS_AUTHKEY=tskey-auth-test scripts/generate-configs.sh
+assert_contains "${SUFFIX_STATE_DIR}/node-name-suffix" "${suffix}"
 
 VM_DISPLAY_BACKEND=vnc VM_DISPLAY_DEVICE=VGA VM_DISPLAY_WIDTH= VM_DISPLAY_HEIGHT= scripts/start-vms.sh
 for node in talos-ts-cp1 talos-ts-cp2 talos-ts-cp3 talos-ts-worker1 talos-ts-worker2 talos-ts-worker3; do
@@ -336,7 +364,7 @@ for node in talos-ts-cp1 talos-ts-cp2 talos-ts-cp3 talos-ts-worker1 talos-ts-wor
   assert_file "${TEST_STATE_DIR}/logs/${node}.qemu.log"
 done
 
-scripts/apply-configs.sh
+WAIT_TALOS_PROBE=version scripts/apply-configs.sh
 assert_log_contains "apply-config"
 assert_log_contains "127.0.0.1:50001"
 assert_log_contains "${TEST_STATE_DIR}/talos/generated/talos-ts-cp1.yaml"
@@ -347,6 +375,8 @@ assert_log_contains "${TEST_STATE_DIR}/talos/generated/talos-ts-worker2.yaml"
 assert_log_contains "127.0.0.1:50006"
 assert_log_contains "${TEST_STATE_DIR}/talos/generated/talos-ts-worker3.yaml"
 
+WAIT_TALOS_PROBE=version scripts/wait-talos-apis.sh
+
 scripts/bootstrap.sh
 assert_file "${TEST_STATE_DIR}/kubeconfig/config"
 assert_log_contains "--endpoints 127.0.0.1:50001 --nodes 127.0.0.1 version"
@@ -354,6 +384,17 @@ assert_log_contains "--endpoints 127.0.0.1:50001 --nodes 127.0.0.1 bootstrap"
 assert_log_contains "--endpoints 127.0.0.1:50001 --nodes 127.0.0.1 kubeconfig"
 assert_log_contains "bootstrap"
 assert_log_contains "kubeconfig"
+
+WAIT_TALOS_PROBE=version scripts/bootstrap-from-scratch.sh
+assert_log_contains "apply-config --insecure --nodes 127.0.0.1:50001"
+
+printf '%s\n' '-oldsuffix' > "${SUFFIX_STATE_DIR}/node-name-suffix"
+WAIT_TALOS_PROBE=version NODE_NAME_SUFFIX=random STATE_DIR="${SUFFIX_STATE_DIR}" scripts/bootstrap-from-scratch.sh
+new_suffix="$(<"${SUFFIX_STATE_DIR}/node-name-suffix")"
+[[ "${new_suffix}" != "-oldsuffix" ]] || fail "expected bootstrap-from-scratch to refresh the random node suffix"
+assert_file "${SUFFIX_STATE_DIR}/talos/generated/talos-ts-cp1${new_suffix}.yaml"
+assert_log_contains "talosctl gen config talos-tailnet-local https://talos-ts-cp1${new_suffix}:6443 --output ${SUFFIX_STATE_DIR}/talos/base"
+assert_log_not_contains "talosctl gen config talos-tailnet-local https://talos-ts-cp1-oldsuffix:6443 --output ${SUFFIX_STATE_DIR}/talos/base"
 
 PATH="${FAKE_BIN}:${PATH}" STATE_DIR="${TEST_STATE_DIR}" make --no-print-directory k9s
 assert_log_contains "k9s KUBECONFIG=${TEST_STATE_DIR}/kubeconfig/config args=''"
@@ -432,6 +473,7 @@ assert_contains "${TMP_DIR}/make-argocd-ui.txt" "port-forward svc/argocd-server 
 make help > "${TMP_DIR}/make-help.txt"
 assert_contains "${TMP_DIR}/make-help.txt" "make argocd     Install Argo CD and apply the root Application"
 assert_contains "${TMP_DIR}/make-help.txt" "make restart-node NODE=talos-ts-worker1 Restart a single VM by node name"
+assert_contains "${TMP_DIR}/make-help.txt" "make bootstrap-from-scratch Rebuild disks, start VMs, apply configs, and bootstrap"
 assert_contains "${TMP_DIR}/make-help.txt" "make argocd-status Show Argo CD pods and rollout status"
 assert_contains "${TMP_DIR}/make-help.txt" "make argocd-sync Trigger a hard refresh and sync of the root Application"
 assert_contains "${TMP_DIR}/make-help.txt" "make argocd-ui  Port-forward the Argo CD API/UI to localhost:8080"
@@ -439,5 +481,8 @@ assert_contains "${TMP_DIR}/make-help.txt" "make argocd-password Print the initi
 
 make -n restart-node NODE=talos-ts-worker1 > "${TMP_DIR}/make-restart-node.txt"
 assert_contains "${TMP_DIR}/make-restart-node.txt" "NODE=\"talos-ts-worker1\" scripts/restart-node.sh"
+
+make -n bootstrap-from-scratch > "${TMP_DIR}/make-bootstrap-from-scratch.txt"
+assert_contains "${TMP_DIR}/make-bootstrap-from-scratch.txt" "scripts/bootstrap-from-scratch.sh"
 
 echo "script behavior tests passed"

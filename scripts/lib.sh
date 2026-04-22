@@ -5,6 +5,78 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_DIR="${STATE_DIR:-${ROOT_DIR}/.state}"
 ENV_FILE="${ROOT_DIR}/.env"
 
+normalize_node_name_suffix() {
+  local suffix="$1"
+
+  if [[ -z "${suffix}" || "${suffix}" == "random" ]]; then
+    echo "${suffix}"
+    return 0
+  fi
+
+  if [[ "${suffix}" == -* ]]; then
+    echo "${suffix}"
+    return 0
+  fi
+
+  echo "-${suffix}"
+}
+
+generate_random_node_name_suffix() {
+  local raw
+
+  if command -v uuidgen >/dev/null 2>&1; then
+    raw="$(uuidgen)"
+  elif [[ -r /proc/sys/kernel/random/uuid ]]; then
+    raw="$(</proc/sys/kernel/random/uuid)"
+  else
+    raw="$(date +%s%N)"
+  fi
+
+  raw="${raw,,}"
+  raw="${raw//[^a-z0-9]/}"
+  echo "-${raw:0:8}"
+}
+
+resolve_node_name_suffix() {
+  local suffix="$1"
+  local suffix_file resolved
+
+  if [[ "${suffix}" != "random" ]]; then
+    echo "${suffix}"
+    return 0
+  fi
+
+  mkdir -p "${STATE_DIR}"
+  suffix_file="${STATE_DIR}/node-name-suffix"
+  if [[ -f "${suffix_file}" ]]; then
+    cat "${suffix_file}"
+    return 0
+  fi
+
+  resolved="$(generate_random_node_name_suffix)"
+  printf '%s\n' "${resolved}" > "${suffix_file}"
+  echo "${resolved}"
+}
+
+append_node_suffixes() {
+  local names="$1"
+  local suffix="$2"
+  local result=()
+  local node
+
+  if [[ -z "${names}" || -z "${suffix}" ]]; then
+    echo "${names}"
+    return 0
+  fi
+
+  read -r -a nodes <<< "${names}"
+  for node in "${nodes[@]}"; do
+    result+=("${node}${suffix}")
+  done
+
+  printf '%s' "${result[*]}"
+}
+
 load_env() {
   if [[ -f "${ENV_FILE}" ]]; then
     local line name value
@@ -29,10 +101,30 @@ load_env() {
   : "${TALOS_VERSION:=v1.11.5}"
   : "${KUBERNETES_VERSION:=1.34.1}"
   : "${TAILSCALE_CIDR:=100.64.0.0/10}"
-  : "${CONTROL_PLANE_NODE_NAMES:=${NODE_NAMES:-talos-ts-cp1 talos-ts-cp2 talos-ts-cp3}}"
-  : "${WORKER_NODE_NAMES:=}"
+  : "${TAILSCALE_DNS_RESOLVERS:=100.100.100.100 9.9.9.9 1.1.1.1 8.8.8.8}"
+  : "${TAILSCALE_SEARCH_DOMAIN:=}"
+  : "${NODE_NAME_SUFFIX:=}"
+  local base_control_plane_node_names base_worker_node_names control_plane_endpoint_base first_control_plane_node resolved_node_name_suffix
+
+  : "${BASE_CONTROL_PLANE_NODE_NAMES:=${CONTROL_PLANE_NODE_NAMES:-${NODE_NAMES:-talos-ts-cp1 talos-ts-cp2 talos-ts-cp3}}}"
+  : "${BASE_WORKER_NODE_NAMES:=${WORKER_NODE_NAMES:-}}"
+  export BASE_CONTROL_PLANE_NODE_NAMES BASE_WORKER_NODE_NAMES
+  base_control_plane_node_names="${BASE_CONTROL_PLANE_NODE_NAMES}"
+  base_worker_node_names="${BASE_WORKER_NODE_NAMES}"
+  resolved_node_name_suffix="$(normalize_node_name_suffix "${NODE_NAME_SUFFIX}")"
+  resolved_node_name_suffix="$(resolve_node_name_suffix "${resolved_node_name_suffix}")"
+  NODE_NAME_SUFFIX_RESOLVED="${resolved_node_name_suffix}"
+  export NODE_NAME_SUFFIX_RESOLVED
+  CONTROL_PLANE_NODE_NAMES="$(append_node_suffixes "${base_control_plane_node_names}" "${resolved_node_name_suffix}")"
+  WORKER_NODE_NAMES="$(append_node_suffixes "${base_worker_node_names}" "${resolved_node_name_suffix}")"
   NODE_NAMES="${CONTROL_PLANE_NODE_NAMES}${WORKER_NODE_NAMES:+ ${WORKER_NODE_NAMES}}"
-  : "${CONTROL_PLANE_ENDPOINT:=https://talos-ts-cp1:6443}"
+  read -r -a _control_plane_nodes <<< "${CONTROL_PLANE_NODE_NAMES}"
+  first_control_plane_node="${_control_plane_nodes[0]}"
+  read -r -a _base_control_plane_nodes <<< "${base_control_plane_node_names}"
+  control_plane_endpoint_base="https://${_base_control_plane_nodes[0]}:6443"
+  if [[ -z "${CONTROL_PLANE_ENDPOINT+x}" || "${CONTROL_PLANE_ENDPOINT}" == "${control_plane_endpoint_base}" ]]; then
+    CONTROL_PLANE_ENDPOINT="https://${first_control_plane_node}:6443"
+  fi
   : "${VM_MEMORY_MIB:=4096}"
   : "${VM_CPUS:=2}"
   : "${VM_CPU_MODEL:=max}"

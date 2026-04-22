@@ -44,6 +44,22 @@ cluster:
           - --iface=tailscale0
 YAML
 
+{
+  printf -- '---\n'
+  printf 'apiVersion: v1alpha1\n'
+  printf 'kind: ResolverConfig\n'
+  printf 'nameservers:\n'
+  read -r -a resolver_addrs <<< "${TAILSCALE_DNS_RESOLVERS}"
+  for resolver in "${resolver_addrs[@]}"; do
+    printf '  - address: %s\n' "${resolver}"
+  done
+  if [[ -n "${TAILSCALE_SEARCH_DOMAIN}" ]]; then
+    printf 'searchDomains:\n'
+    printf '  domains:\n'
+    printf '    - %s\n' "${TAILSCALE_SEARCH_DOMAIN}"
+  fi
+} >> "${PATCH_COMMON}"
+
 cat > "${PATCH_CONTROL_PLANE}" <<YAML
 cluster:
   etcd:
