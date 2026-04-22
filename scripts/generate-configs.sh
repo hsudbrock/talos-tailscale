@@ -17,8 +17,13 @@ SCHEMATIC_ID="$(<"${SCHEMATIC_ID_FILE}")"
 INSTALL_IMAGE="factory.talos.dev/installer/${SCHEMATIC_ID}:${TALOS_VERSION}"
 PATCH_COMMON="$(state_path patches/common.yaml)"
 PATCH_CONTROL_PLANE="$(state_path patches/control-plane.yaml)"
+PATCH_WORKER="$(state_path patches/worker.yaml)"
 BASE_DIR="$(state_path talos/base)"
 OUT_DIR="$(state_path talos/generated)"
+LONGHORN_VOLUME_NAME="${LONGHORN_VOLUME_NAME:-longhorn}"
+LONGHORN_DATA_PATH="/var/mnt/${LONGHORN_VOLUME_NAME}"
+LONGHORN_DISK_SELECTOR="${LONGHORN_DISK_SELECTOR:-disk.dev_path == \"/dev/vdb\"}"
+LONGHORN_VOLUME_MAX_SIZE="${LONGHORN_VOLUME_MAX_SIZE:-16GiB}"
 
 rm -rf "${BASE_DIR}" "${OUT_DIR}" "$(state_path patches/nodes)"
 mkdir -p "${BASE_DIR}" "${OUT_DIR}" "$(state_path patches/nodes)"
@@ -67,6 +72,19 @@ cluster:
       - ${TAILSCALE_CIDR}
 YAML
 
+cat > "${PATCH_WORKER}" <<YAML
+machine:
+  kubelet:
+    extraMounts:
+      - destination: ${LONGHORN_DATA_PATH}
+        type: bind
+        source: ${LONGHORN_DATA_PATH}
+        options:
+          - bind
+          - rshared
+          - rw
+YAML
+
 talosctl gen config \
   "${CLUSTER_NAME}" \
   "${CONTROL_PLANE_ENDPOINT}" \
@@ -79,6 +97,7 @@ talosctl gen config \
   --config-patch-control-plane @"${PATCH_COMMON}" \
   --config-patch-control-plane @"${PATCH_CONTROL_PLANE}" \
   --config-patch-worker @"${PATCH_COMMON}" \
+  --config-patch-worker @"${PATCH_WORKER}" \
   "${SAN_ARGS[@]}" \
   --force
 
@@ -134,6 +153,21 @@ set_hostname_config() {
   mv "${tmp_config}" "${config}"
 }
 
+append_longhorn_user_volume_config() {
+  local config="$1"
+
+  cat >> "${config}" <<YAML
+---
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: ${LONGHORN_VOLUME_NAME}
+provisioning:
+  diskSelector:
+    match: ${LONGHORN_DISK_SELECTOR}
+  maxSize: ${LONGHORN_VOLUME_MAX_SIZE}
+YAML
+}
+
 generate_node_config() {
   local node="$1"
   local base_config="$2"
@@ -159,6 +193,9 @@ YAML
     --output "${OUT_DIR}/${node}.yaml"
 
   set_hostname_config "${OUT_DIR}/${node}.yaml" "${node}"
+  if [[ "${base_config}" == "${BASE_DIR}/worker.yaml" ]]; then
+    append_longhorn_user_volume_config "${OUT_DIR}/${node}.yaml"
+  fi
   log "Generated config for ${node}; first-boot Talos API: 127.0.0.1:$(api_port_for_index "${idx}")"
 }
 

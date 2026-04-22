@@ -16,9 +16,11 @@ customization:
   systemExtensions:
     officialExtensions:
       - siderolabs/tailscale
+      - siderolabs/iscsi-tools
+      - siderolabs/util-linux-tools
 YAML
 
-log "Submitting Talos Image Factory schematic with siderolabs/tailscale"
+log "Submitting Talos Image Factory schematic with Tailscale and Longhorn extensions"
 SCHEMATIC_ID="$(
   curl -fsSL \
     -X POST \

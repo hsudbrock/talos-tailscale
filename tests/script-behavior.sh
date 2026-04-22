@@ -147,10 +147,11 @@ set -euo pipefail
 printf 'k9s KUBECONFIG=%q args=%q\n' "${KUBECONFIG:-}" "$*" >> "${CALL_LOG}"
 SH
 
-cat > "${FAKE_BIN}/talosctl" <<'SH'
+  cat > "${FAKE_BIN}/talosctl" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'talosctl %q\n' "$*" >> "${CALL_LOG}"
+orig_args=("$@")
 while (($#)); do
   case "$1" in
     --nodes|--talosconfig|--endpoints|-n|-e)
@@ -239,6 +240,14 @@ YAML
     cat "${input}" "${patch}" > "${out}"
     ;;
   apply-config|bootstrap|health|kubeconfig|version|service|etcd)
+    if [[ "${cmd}" == "apply-config" && "${FAKE_TALOSCTL_APPLY_REQUIRE_AUTH:-0}" == "1" ]]; then
+      for arg in "${orig_args[@]}"; do
+        if [[ "${arg}" == "--insecure" ]]; then
+          echo 'error applying new configuration: rpc error: code = Unavailable desc = connection error: desc = "error reading server preface: remote error: tls: certificate required"' >&2
+          exit 1
+        fi
+      done
+    fi
     if [[ "${cmd}" == "kubeconfig" ]]; then
       for arg in "$@"; do
         if [[ "${arg}" == */kubeconfig/config ]]; then
@@ -289,6 +298,8 @@ export WORKER_NODE_NAMES="talos-ts-worker1 talos-ts-worker2 talos-ts-worker3"
 export NODE_NAMES="${CONTROL_PLANE_NODE_NAMES} ${WORKER_NODE_NAMES}"
 export TAILSCALE_SEARCH_DOMAIN="tail4d7760.ts.net"
 export NODE_NAME_SUFFIX=""
+export LONGHORN_DISK_SELECTOR='disk.dev_path == "/dev/vdb"'
+export LONGHORN_VOLUME_MAX_SIZE="16GiB"
 
 scripts/prepare-image.sh
 assert_file "${TEST_STATE_DIR}/schematic.yaml"
@@ -296,6 +307,8 @@ assert_file "${TEST_STATE_DIR}/schematic.id"
 compgen -G "${TEST_STATE_DIR}/assets/talos-v*-tailscale-metal-amd64.iso" >/dev/null ||
   fail "expected downloaded Talos ISO asset"
 assert_contains "${TEST_STATE_DIR}/schematic.yaml" "siderolabs/tailscale"
+assert_contains "${TEST_STATE_DIR}/schematic.yaml" "siderolabs/iscsi-tools"
+assert_contains "${TEST_STATE_DIR}/schematic.yaml" "siderolabs/util-linux-tools"
 assert_contains "${TEST_STATE_DIR}/schematic.id" "test-schematic"
 
 TS_AUTHKEY=tskey-auth-test scripts/generate-configs.sh
@@ -311,10 +324,23 @@ for node in talos-ts-cp1 talos-ts-cp2 talos-ts-cp3 talos-ts-worker1 talos-ts-wor
   assert_not_contains "${config}" "    hostname: ${node}"
   assert_not_contains "${config}" "auto: stable"
 done
+for node in talos-ts-cp1 talos-ts-cp2 talos-ts-cp3; do
+  config="${TEST_STATE_DIR}/talos/generated/${node}.yaml"
+  assert_not_contains "${config}" "kind: UserVolumeConfig"
+  assert_not_contains "${config}" "/var/mnt/longhorn"
+done
+for node in talos-ts-worker1 talos-ts-worker2 talos-ts-worker3; do
+  config="${TEST_STATE_DIR}/talos/generated/${node}.yaml"
+  assert_contains "${config}" "kind: UserVolumeConfig"
+  assert_contains "${config}" "name: longhorn"
+  assert_contains "${config}" "match: disk.dev_path == \"/dev/vdb\""
+  assert_contains "${config}" "maxSize: 16GiB"
+done
 assert_log_contains "--output-types controlplane,worker,talosconfig"
 assert_log_contains "--config-patch-control-plane @${TEST_STATE_DIR}/patches/common.yaml"
 assert_log_contains "--config-patch-control-plane @${TEST_STATE_DIR}/patches/control-plane.yaml"
 assert_log_contains "--config-patch-worker @${TEST_STATE_DIR}/patches/common.yaml"
+assert_log_contains "--config-patch-worker @${TEST_STATE_DIR}/patches/worker.yaml"
 assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "validSubnets:"
 assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "100.64.0.0/10"
 assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "flannel:"
@@ -327,6 +353,9 @@ assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "address: 8.8.8.8"
 assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "tail4d7760.ts.net"
 assert_contains "${TEST_STATE_DIR}/patches/control-plane.yaml" "advertisedSubnets:"
 assert_contains "${TEST_STATE_DIR}/patches/control-plane.yaml" "100.64.0.0/10"
+assert_contains "${TEST_STATE_DIR}/patches/worker.yaml" "destination: /var/mnt/longhorn"
+assert_contains "${TEST_STATE_DIR}/patches/worker.yaml" "source: /var/mnt/longhorn"
+assert_contains "${TEST_STATE_DIR}/patches/worker.yaml" "rshared"
 assert_log_contains "--install-disk /dev/vda"
 
 SUFFIX_STATE_DIR="${TMP_DIR}/state-suffix"
@@ -347,10 +376,18 @@ for node in talos-ts-cp1 talos-ts-cp2 talos-ts-cp3 talos-ts-worker1 talos-ts-wor
   assert_file "${TEST_STATE_DIR}/disks/${node}.qcow2"
   assert_file "${TEST_STATE_DIR}/${node}.pid"
 done
+for node in talos-ts-worker1 talos-ts-worker2 talos-ts-worker3; do
+  assert_file "${TEST_STATE_DIR}/disks/${node}-data.qcow2"
+done
+for node in talos-ts-cp1 talos-ts-cp2 talos-ts-cp3; do
+  [[ ! -f "${TEST_STATE_DIR}/disks/${node}-data.qcow2" ]] || fail "expected no worker data disk for ${node}"
+done
 assert_log_contains "hostfwd=tcp:127.0.0.1:50001-:50000"
 assert_log_contains "hostfwd=tcp:127.0.0.1:64431-:6443"
 assert_log_contains "-boot order=cd"
 assert_log_contains "-cpu max"
+assert_log_contains "file=${TEST_STATE_DIR}/disks/talos-ts-worker1-data.qcow2,format=qcow2,if=virtio"
+assert_log_not_contains "file=${TEST_STATE_DIR}/disks/talos-ts-cp1-data.qcow2,format=qcow2,if=virtio"
 assert_log_contains "-display vnc=127.0.0.1:1"
 assert_log_contains "-display vnc=127.0.0.1:2"
 assert_log_contains "-display vnc=127.0.0.1:3"
@@ -394,6 +431,12 @@ assert_log_contains "127.0.0.1:50005"
 assert_log_contains "${TEST_STATE_DIR}/talos/generated/talos-ts-worker2.yaml"
 assert_log_contains "127.0.0.1:50006"
 assert_log_contains "${TEST_STATE_DIR}/talos/generated/talos-ts-worker3.yaml"
+
+: > "${CALL_LOG}"
+FAKE_TALOSCTL_APPLY_REQUIRE_AUTH=1 WAIT_TALOS_PROBE=version scripts/apply-configs.sh
+assert_log_contains "--nodes 127.0.0.1:50001 --file ${TEST_STATE_DIR}/talos/generated/talos-ts-cp1.yaml"
+assert_log_contains "--talosconfig ${TEST_STATE_DIR}/talos/generated/talosconfig --endpoints 127.0.0.1:50001 --nodes talos-ts-cp1 --file ${TEST_STATE_DIR}/talos/generated/talos-ts-cp1.yaml"
+assert_log_contains "--talosconfig ${TEST_STATE_DIR}/talos/generated/talosconfig --endpoints 127.0.0.1:50001 --nodes talos-ts-worker1 --file ${TEST_STATE_DIR}/talos/generated/talos-ts-worker1.yaml"
 
 WAIT_TALOS_PROBE=version scripts/wait-talos-apis.sh
 

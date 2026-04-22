@@ -130,6 +130,7 @@ load_env() {
   : "${VM_CPUS:=2}"
   : "${VM_CPU_MODEL:=max}"
   : "${VM_DISK_GIB:=20}"
+  : "${WORKER_DATA_DISK_GIB:=20}"
   : "${INSTALL_DISK:=/dev/vda}"
   : "${HOST_API_BASE_PORT:=50001}"
   : "${HOST_K8S_BASE_PORT:=64431}"
@@ -146,6 +147,9 @@ load_env() {
   : "${ARGOCD_NAMESPACE:=argocd}"
   : "${ARGOCD_TARGET_REVISION:=main}"
   : "${ARGOCD_ROOT_PATH:=gitops/clusters/${CLUSTER_NAME}/root}"
+  : "${LONGHORN_VOLUME_NAME:=longhorn}"
+  : "${LONGHORN_DISK_SELECTOR:=disk.dev_path == \"/dev/vdb\"}"
+  : "${LONGHORN_VOLUME_MAX_SIZE:=16GiB}"
   if [[ -z "${ARGOCD_REPO_URL+x}" ]]; then
     ARGOCD_REPO_URL="$(git -C "${ROOT_DIR}" config --get remote.origin.url 2>/dev/null || true)"
     if [[ "${ARGOCD_REPO_URL}" =~ ^git@github.com:(.+)$ ]]; then
@@ -230,11 +234,24 @@ require_node() {
   exit 1
 }
 
+is_worker_node() {
+  local node="$1"
+  local worker
+
+  for worker in "${WORKER_NODES[@]}"; do
+    if [[ "${worker}" == "${node}" ]]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 start_vm() {
   local node="$1"
-  local idx disk pidfile log_file qemu_log_file api_port k8s_port vnc_display vnc_port
+  local idx disk worker_data_disk pidfile log_file qemu_log_file api_port k8s_port vnc_display vnc_port
   local display_label
-  local display_device_args display_args qemu_cmd
+  local display_device_args display_args qemu_cmd extra_drive_args
 
   require_node "${node}"
   ensure_state_dir
@@ -249,6 +266,7 @@ start_vm() {
 
   idx="$(node_index "${node}")"
   disk="$(state_path "disks/${node}.qcow2")"
+  worker_data_disk="$(state_path "disks/${node}-data.qcow2")"
   pidfile="$(state_path "${node}.pid")"
   log_file="$(state_path "logs/${node}.log")"
   qemu_log_file="$(state_path "logs/${node}.qemu.log")"
@@ -283,6 +301,14 @@ start_vm() {
     qemu-img create -f qcow2 "${disk}" "${VM_DISK_GIB}G" >/dev/null
   fi
 
+  extra_drive_args=()
+  if is_worker_node "${node}" && (( WORKER_DATA_DISK_GIB > 0 )); then
+    if [[ ! -f "${worker_data_disk}" ]]; then
+      qemu-img create -f qcow2 "${worker_data_disk}" "${WORKER_DATA_DISK_GIB}G" >/dev/null
+    fi
+    extra_drive_args=(-drive "file=${worker_data_disk},format=qcow2,if=virtio")
+  fi
+
   log "Starting ${node}; Talos API localhost:${api_port}, Kubernetes localhost:${k8s_port}, display ${display_label}"
   qemu_cmd=(
     qemu-system-x86_64
@@ -292,6 +318,7 @@ start_vm() {
     -smp "${VM_CPUS}" \
     -m "${VM_MEMORY_MIB}" \
     -drive "file=${disk},format=qcow2,if=virtio" \
+    "${extra_drive_args[@]}" \
     -cdrom "${ISO_FILE}" \
     -boot order=cd \
     -netdev "user,id=net${idx},hostname=${node},hostfwd=tcp:127.0.0.1:${api_port}-:50000,hostfwd=tcp:127.0.0.1:${k8s_port}-:6443" \

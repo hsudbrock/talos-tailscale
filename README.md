@@ -102,7 +102,8 @@ generated node names, and `random` generates a fresh short suffix for each
 NODE_NAME_SUFFIX=random
 ```
 
-Build and download a Talos ISO with the official Tailscale system extension:
+Build and download a Talos ISO with the official Tailscale extension plus the
+Longhorn-required `iscsi-tools` and `util-linux-tools` extensions:
 
 ```bash
 make image
@@ -113,6 +114,21 @@ Generate Talos machine configs:
 ```bash
 make configs
 ```
+
+The generated worker configs now prepare Longhorn's Talos data path at
+`/var/mnt/longhorn`. By default worker VMs also get a second virtio disk
+dedicated to Longhorn, and the repo provisions the user volume from that disk
+using:
+
+```bash
+WORKER_DATA_DISK_GIB=20
+LONGHORN_VOLUME_NAME=longhorn
+LONGHORN_DISK_SELECTOR='disk.dev_path == "/dev/vdb"'
+LONGHORN_VOLUME_MAX_SIZE=16GiB
+```
+
+Adjust those in `.env` before `make configs` if your worker storage layout is
+different.
 
 Start the VMs:
 
@@ -196,8 +212,10 @@ VM_CPU_MODEL=host
 ```
 
 The default install disk is `/dev/vda` because the QEMU disk is attached as a
-virtio block device. If you change the QEMU disk bus, update `INSTALL_DISK` in
-`.env` and rerun `make configs`.
+virtio block device. Worker nodes also get a second virtio data disk by default
+for Longhorn, which appears as `/dev/vdb`. If you change the QEMU disk bus or
+device order, update `INSTALL_DISK`, `WORKER_DATA_DISK_GIB`, and
+`LONGHORN_DISK_SELECTOR` in `.env` and rerun `make configs`.
 
 If you want to experiment with a different display device or explicit guest
 resolution, set these values in `.env`:
@@ -289,6 +307,50 @@ make argocd-password
 The Makefile targets are thin wrappers around the scripts in `scripts/`. Use the
 scripts directly when debugging a specific step.
 
+## Preparing for Longhorn
+
+Before installing Longhorn through Argo CD, make sure the nodes pick up both the
+image-level and machine-config-level prerequisites:
+
+```bash
+make image
+make configs
+make apply
+```
+
+`make image` refreshes the Talos schematic so newly installed or upgraded nodes
+include `siderolabs/iscsi-tools` and `siderolabs/util-linux-tools`.
+`make configs` regenerates the worker configs with:
+
+- a kubelet bind mount for `/var/mnt/longhorn`
+- a `UserVolumeConfig` named `longhorn`, which Talos mounts at
+  `/var/mnt/longhorn`
+- a disk selector that points to the worker's dedicated `/dev/vdb` data disk
+- a default `maxSize` of `16GiB`, which you can override with
+  `LONGHORN_VOLUME_MAX_SIZE`
+
+If the cluster is already running an older Talos image schematic, upgrading or
+reinstalling the nodes is still required in addition to `make apply`, because
+system extensions come from the Talos image.
+
+If you change `WORKER_DATA_DISK_GIB`, the new worker disk size only takes effect
+for newly created qcow2 images. Rebuild from scratch or remove the existing
+worker disk images before expecting the new capacity to appear in Talos.
+
+When Longhorn is installed later, set its default data path to
+`/var/mnt/longhorn` so it uses the Talos-managed user volume instead of the
+legacy `/var/lib/longhorn` path.
+
+The Longhorn namespace must opt into privileged Pod Security admission. In Git,
+label the namespace at least with:
+
+```yaml
+pod-security.kubernetes.io/enforce: privileged
+```
+
+If you also set Pod Security `audit` and `warn` labels for consistency, keep
+them at `privileged` as well.
+
 ## What the scripts generate
 
 Runtime state is written under `.state/`:
@@ -358,6 +420,30 @@ cluster:
 The flannel argument is required in this QEMU topology. Without it, flannel
 auto-detects the identical per-VM QEMU NAT address `10.0.2.15`, which breaks
 pod-to-pod and ClusterIP service routing.
+
+Generated worker configs also include a Longhorn-specific kubelet bind mount and
+Talos user volume declaration:
+
+```yaml
+machine:
+  kubelet:
+    extraMounts:
+      - destination: /var/mnt/longhorn
+        type: bind
+        source: /var/mnt/longhorn
+        options:
+          - bind
+          - rshared
+          - rw
+---
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: longhorn
+provisioning:
+  diskSelector:
+    match: disk.dev_path == "/dev/vdb"
+  maxSize: 16GiB
+```
 
 ## Validation checklist
 
