@@ -5,6 +5,15 @@ source "$(dirname "$0")/lib.sh"
 load_env
 require_cmd talosctl
 
+WAIT_SCRIPT="${ROOT_DIR}/scripts/wait-talos-apis.sh"
+
+if [[ ! -x "${WAIT_SCRIPT}" ]]; then
+  echo "missing ${WAIT_SCRIPT}" >&2
+  exit 1
+fi
+
+"${WAIT_SCRIPT}"
+
 for node in "${NODES[@]}"; do
   idx="$(node_index "${node}")"
   config="$(state_path "talos/generated/${node}.yaml")"
