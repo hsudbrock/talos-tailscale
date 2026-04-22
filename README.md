@@ -314,7 +314,7 @@ name: tailscale
 environment:
   - TS_AUTHKEY=...
   - TS_HOSTNAME=talos-ts-cp1
-  - TS_ACCEPT_DNS=true
+  - TS_ACCEPT_DNS=false
   - TS_STATE_DIR=/var/lib/tailscale
   - TS_EXTRA_ARGS=--reset
 ```
@@ -376,6 +376,17 @@ The validation covers:
 - A small workload scheduled by normal Kubernetes rules and service
   reachability check
 
+To audit recurring Talos log noise without dumping raw logs, run:
+
+```bash
+make logs-audit
+```
+
+This summarizes known patterns per node and labels them as:
+
+- `historical`: present in the recent log history, but not in the most recent window
+- `recurring`: still appearing in the recent log window and worth attention
+
 To inspect Tailscale extension logs during bootstrap/debugging:
 
 ```bash
@@ -384,6 +395,20 @@ make logs-tailscale-cp1
 make logs-tailscale-cp2
 make logs-tailscale-cp3
 ```
+
+Known acceptable transient messages:
+
+- During early bootstrap, Kubernetes nodes may be `NotReady` for a short time
+  while flannel and kube-proxy come up.
+- `make validate` emits a PodSecurity warning for the temporary `tailnet-curl`
+  pod; the curl probe still succeeds and the pod is deleted afterward.
+
+Known avoidable log noise:
+
+- If the Tailscale extension is configured with `TS_ACCEPT_DNS=true`, it will
+  try to rewrite `/etc/resolv.conf` and log read-only filesystem errors on
+  Talos. This repo defaults `TAILSCALE_ACCEPT_DNS=false` and relies on Talos
+  `ResolverConfig` instead.
 
 For additional manual inspection:
 

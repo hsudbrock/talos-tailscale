@@ -248,6 +248,25 @@ YAML
       done
     fi
     ;;
+  logs)
+    service_name="${1:-}"
+    case "${service_name}" in
+      machined)
+        printf 'old boot warning: StaticEndpointController lookup talos-ts-cp1 on 127.0.0.53:53: no such host\n'
+        for i in $(seq 1 120); do
+          printf 'machined info line %s\n' "${i}"
+        done
+        ;;
+      ext-tailscale)
+        for i in $(seq 1 90); do
+          printf 'tailscale info line %s\n' "${i}"
+        done
+        printf 'health(warnable=dns-set-os-config-failed): error: writing to "/etc/resolv.pre-tailscale-backup.conf": read-only file system\n'
+        ;;
+      *)
+        ;;
+    esac
+    ;;
   validate)
     ;;
   *)
@@ -287,6 +306,7 @@ for node in talos-ts-cp1 talos-ts-cp2 talos-ts-cp3 talos-ts-worker1 talos-ts-wor
   assert_contains "${config}" "kind: HostnameConfig"
   assert_contains "${config}" "TS_AUTHKEY=tskey-auth-test"
   assert_contains "${config}" "TS_HOSTNAME=${node}"
+  assert_contains "${config}" "TS_ACCEPT_DNS=false"
   assert_contains "${config}" "hostname: ${node}"
   assert_not_contains "${config}" "    hostname: ${node}"
   assert_not_contains "${config}" "auto: stable"
@@ -447,6 +467,14 @@ assert_contains "${TMP_DIR}/make-logs-tailscale.txt" "127.0.0.1:50004"
 assert_contains "${TMP_DIR}/make-logs-tailscale.txt" "127.0.0.1:50005"
 assert_contains "${TMP_DIR}/make-logs-tailscale.txt" "127.0.0.1:50006"
 assert_contains "${TMP_DIR}/make-logs-tailscale.txt" "logs ext-tailscale --tail 120"
+
+scripts/logs-audit.sh > "${TMP_DIR}/logs-audit.out"
+assert_contains "${TMP_DIR}/logs-audit.out" "NODE                     SERVICE        PATTERN          STATE"
+assert_contains "${TMP_DIR}/logs-audit.out" "talos-ts-cp1             machined       endpoint-dns     historical"
+assert_contains "${TMP_DIR}/logs-audit.out" "talos-ts-cp1             ext-tailscale  dns-write        recurring"
+
+make -n logs-audit > "${TMP_DIR}/make-logs-audit.txt"
+assert_contains "${TMP_DIR}/make-logs-audit.txt" "scripts/logs-audit.sh"
 
 make -n clean-disks > "${TMP_DIR}/make-clean-disks.txt"
 assert_contains "${TMP_DIR}/make-clean-disks.txt" "scripts/stop-vms.sh"

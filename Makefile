@@ -4,7 +4,7 @@ KUBECONFIG ?= $(STATE_DIR)/kubeconfig/config
 
 .DEFAULT_GOAL := help
 
-.PHONY: help env image configs start restart-node apply bootstrap bootstrap-from-scratch validate argocd argocd-status argocd-sync argocd-ui argocd-password k9s stop clean clean-disks reset test test-local vnc-cp1 vnc-cp2 vnc-cp3 vnc-worker1 vnc-worker2 vnc-worker3 logs-tailscale logs-tailscale-cp1 logs-tailscale-cp2 logs-tailscale-cp3 logs-tailscale-worker1 logs-tailscale-worker2 logs-tailscale-worker3
+.PHONY: help env image configs start restart-node apply bootstrap bootstrap-from-scratch validate logs-audit argocd argocd-status argocd-sync argocd-ui argocd-password k9s stop clean clean-disks reset test test-local vnc-cp1 vnc-cp2 vnc-cp3 vnc-worker1 vnc-worker2 vnc-worker3 logs-tailscale logs-tailscale-cp1 logs-tailscale-cp2 logs-tailscale-cp3 logs-tailscale-worker1 logs-tailscale-worker2 logs-tailscale-worker3
 
 help:
 	@printf 'Talos over Tailscale local test targets:\n\n'
@@ -17,6 +17,7 @@ help:
 	@printf '  make bootstrap  Bootstrap etcd/Kubernetes and fetch kubeconfig\n'
 	@printf '  make bootstrap-from-scratch Rebuild disks, start VMs, apply configs, and bootstrap\n'
 	@printf '  make validate   Validate Talos, Kubernetes, etcd, and smoke workload\n'
+	@printf '  make logs-audit Summarize recurring Talos log warnings by node/service\n'
 	@printf '  make argocd     Install Argo CD and apply the root Application\n'
 	@printf '  make argocd-status Show Argo CD pods and rollout status\n'
 	@printf '  make argocd-sync Trigger a hard refresh and sync of the root Application\n'
@@ -67,6 +68,9 @@ bootstrap-from-scratch:
 validate:
 	scripts/validate.sh
 
+logs-audit:
+	scripts/logs-audit.sh
+
 argocd:
 	scripts/bootstrap-argocd.sh
 
@@ -109,7 +113,7 @@ reset: clean
 test: test-local
 
 test-local:
-	bash -n scripts/lib.sh scripts/prepare-image.sh scripts/generate-configs.sh scripts/start-vms.sh scripts/apply-configs.sh scripts/bootstrap.sh scripts/bootstrap-argocd.sh scripts/validate.sh scripts/stop-vms.sh
+	bash -n scripts/lib.sh scripts/prepare-image.sh scripts/generate-configs.sh scripts/start-vms.sh scripts/apply-configs.sh scripts/bootstrap.sh scripts/bootstrap-argocd.sh scripts/validate.sh scripts/logs-audit.sh scripts/stop-vms.sh
 	bash tests/script-behavior.sh
 
 vnc-cp1:

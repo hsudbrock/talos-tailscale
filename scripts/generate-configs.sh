@@ -148,7 +148,7 @@ name: tailscale
 environment:
   - TS_AUTHKEY=${TS_AUTHKEY}
   - TS_HOSTNAME=${node}
-  - TS_ACCEPT_DNS=true
+  - TS_ACCEPT_DNS=${TAILSCALE_ACCEPT_DNS}
   - TS_STATE_DIR=/var/lib/tailscale
   - TS_EXTRA_ARGS=--reset
 YAML
