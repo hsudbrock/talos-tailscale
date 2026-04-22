@@ -560,6 +560,8 @@ assert_contains "${TMP_DIR}/make-longhorn-ui.txt" "port-forward svc/longhorn-fro
 
 assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/kustomization.yaml" "platform-longhorn-namespace.yaml"
 assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/kustomization.yaml" "platform-longhorn.yaml"
+assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/kustomization.yaml" "storage-smoke-namespace.yaml"
+assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/kustomization.yaml" "storage-smoke.yaml"
 assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/platform-longhorn-namespace.yaml" "name: longhorn-system"
 assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/platform-longhorn-namespace.yaml" "pod-security.kubernetes.io/enforce: privileged"
 assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/platform-longhorn.yaml" "name: longhorn"
@@ -569,6 +571,12 @@ assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/platform-l
 assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/platform-longhorn.yaml" "defaultDataPath: /var/mnt/longhorn"
 assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/platform-longhorn.yaml" "defaultClassReplicaCount: 1"
 assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/platform-longhorn.yaml" "jobEnabled: false"
+assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/storage-smoke-namespace.yaml" "name: storage-smoke"
+assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/storage-smoke.yaml" "kind: PersistentVolumeClaim"
+assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/storage-smoke.yaml" "storageClassName: longhorn"
+assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/storage-smoke.yaml" "kind: Deployment"
+assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/storage-smoke.yaml" "name: longhorn-demo"
+assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/storage-smoke.yaml" "exec httpd -f -p 8080 -h /data"
 
 make help > "${TMP_DIR}/make-help.txt"
 assert_contains "${TMP_DIR}/make-help.txt" "make argocd     Install Argo CD and apply the root Application"

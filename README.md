@@ -311,6 +311,20 @@ the `longhorn-system` namespace, sets the default data path to
 `/var/mnt/longhorn`, and uses a single default replica to match this repo's
 single-worker layout.
 
+The GitOps root also includes a tiny `storage-smoke` workload that consumes a
+Longhorn PVC named `longhorn-demo`. It uses the default `longhorn` storage
+class and serves the persisted `/data/index.html` content over HTTP from a
+single replica deployment.
+
+After syncing Argo CD, verify the sample workload with:
+
+```bash
+KUBECONFIG=.state/kubeconfig/config kubectl get pvc,pod,svc -n storage-smoke
+KUBECONFIG=.state/kubeconfig/config kubectl exec -n storage-smoke deploy/longhorn-demo -- cat /data/index.html
+```
+
+That second command should print `longhorn persistent storage ok`.
+
 Open k9s with the generated kubeconfig:
 
 ```bash

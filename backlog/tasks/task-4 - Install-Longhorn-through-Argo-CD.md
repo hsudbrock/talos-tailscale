@@ -1,11 +1,11 @@
 ---
 id: TASK-4
 title: Install Longhorn through Argo CD
-status: In Progress
+status: Done
 assignee:
   - Codex
 created_date: '2026-04-19 07:18'
-updated_date: '2026-04-22 21:12'
+updated_date: '2026-04-22 21:37'
 labels:
   - argocd
   - longhorn
@@ -27,10 +27,18 @@ Add Longhorn as the first GitOps-managed platform component and validate dynamic
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 GitOps root includes a Longhorn child Application.
-- [ ] #2 Longhorn is installed from a pinned chart/version.
-- [ ] #3 Longhorn namespace/security labels are declared in Git.
-- [ ] #4 A default or named Longhorn StorageClass is created intentionally.
-- [ ] #5 Validation includes a PVC smoke test that binds, mounts, writes data, and cleans up.
-- [ ] #6 README documents install, status, and troubleshooting commands.
+- [x] #1 GitOps root includes a Longhorn child Application.
+- [x] #2 Longhorn is installed from a pinned chart/version.
+- [x] #3 Longhorn namespace/security labels are declared in Git.
+- [x] #4 A default or named Longhorn StorageClass is created intentionally.
+- [x] #5 Validation includes a PVC smoke test that binds, mounts, writes data, and cleans up.
+- [x] #6 README documents install, status, and troubleshooting commands.
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Installed Longhorn through the Argo CD root with a pinned chart version and privileged namespace labels.
+Validated the default longhorn StorageClass and a live PVC smoke path that bound, mounted, wrote data, and cleaned up.
+Added a GitOps-managed storage-smoke sample workload backed by a Longhorn PVC and verified it served persisted content in-cluster.
+<!-- SECTION:FINAL_SUMMARY:END -->
