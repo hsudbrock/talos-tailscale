@@ -1,10 +1,11 @@
 ---
 id: TASK-4
 title: Install Longhorn through Argo CD
-status: To Do
+status: In Progress
 assignee:
   - Codex
 created_date: '2026-04-19 07:18'
+updated_date: '2026-04-22 21:12'
 labels:
   - argocd
   - longhorn

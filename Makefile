@@ -4,7 +4,7 @@ KUBECONFIG ?= $(STATE_DIR)/kubeconfig/config
 
 .DEFAULT_GOAL := help
 
-.PHONY: help env image configs start restart-node apply bootstrap bootstrap-from-scratch validate logs-audit argocd argocd-status argocd-sync argocd-ui argocd-password k9s stop clean clean-disks reset test test-local vnc-cp1 vnc-cp2 vnc-cp3 vnc-worker1 vnc-worker2 vnc-worker3 logs-tailscale logs-tailscale-cp1 logs-tailscale-cp2 logs-tailscale-cp3 logs-tailscale-worker1 logs-tailscale-worker2 logs-tailscale-worker3
+.PHONY: help env image configs start restart-node apply bootstrap bootstrap-from-scratch validate logs-audit argocd argocd-status argocd-sync argocd-ui argocd-password longhorn-status longhorn-sync longhorn-ui k9s stop clean clean-disks reset test test-local vnc-cp1 vnc-cp2 vnc-cp3 vnc-worker1 vnc-worker2 vnc-worker3 logs-tailscale logs-tailscale-cp1 logs-tailscale-cp2 logs-tailscale-cp3 logs-tailscale-worker1 logs-tailscale-worker2 logs-tailscale-worker3
 
 help:
 	@printf 'Talos over Tailscale local test targets:\n\n'
@@ -23,6 +23,9 @@ help:
 	@printf '  make argocd-sync Trigger a hard refresh and sync of the root Application\n'
 	@printf '  make argocd-ui  Port-forward the Argo CD API/UI to localhost:8080\n'
 	@printf '  make argocd-password Print the initial Argo CD admin password\n'
+	@printf '  make longhorn-status Show Longhorn pods and rollout status\n'
+	@printf '  make longhorn-sync Trigger a hard refresh and sync of the Longhorn Application\n'
+	@printf '  make longhorn-ui Port-forward the Longhorn UI to localhost:8081\n'
 	@printf '  make k9s        Open k9s with the generated kubeconfig\n'
 	@printf '  make stop       Stop the QEMU VMs\n'
 	@printf '  make clean      Remove generated .state after stopping VMs\n'
@@ -93,6 +96,24 @@ argocd-ui:
 argocd-password:
 	@[[ -f "$(KUBECONFIG)" ]] || { echo "missing $(KUBECONFIG); run make bootstrap first" >&2; exit 1; }
 	@KUBECONFIG="$(KUBECONFIG)" kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo
+
+longhorn-status:
+	@[[ -f "$(KUBECONFIG)" ]] || { echo "missing $(KUBECONFIG); run make bootstrap first" >&2; exit 1; }
+	KUBECONFIG="$(KUBECONFIG)" kubectl get pods -n longhorn-system
+	KUBECONFIG="$(KUBECONFIG)" kubectl -n argocd get application longhorn
+	KUBECONFIG="$(KUBECONFIG)" kubectl rollout status deployment/longhorn-ui --timeout=5m -n longhorn-system
+	KUBECONFIG="$(KUBECONFIG)" kubectl rollout status daemonset/longhorn-manager --timeout=5m -n longhorn-system
+	KUBECONFIG="$(KUBECONFIG)" kubectl rollout status deployment/longhorn-driver-deployer --timeout=5m -n longhorn-system
+
+longhorn-sync:
+	@[[ -f "$(KUBECONFIG)" ]] || { echo "missing $(KUBECONFIG); run make bootstrap first" >&2; exit 1; }
+	KUBECONFIG="$(KUBECONFIG)" kubectl -n argocd annotate application longhorn argocd.argoproj.io/refresh=hard --overwrite
+	KUBECONFIG="$(KUBECONFIG)" kubectl -n argocd patch application longhorn --type merge -p '{"operation":{"sync":{"prune":true,"syncOptions":["CreateNamespace=true"]}}}'
+	KUBECONFIG="$(KUBECONFIG)" kubectl -n argocd get application longhorn
+
+longhorn-ui:
+	@[[ -f "$(KUBECONFIG)" ]] || { echo "missing $(KUBECONFIG); run make bootstrap first" >&2; exit 1; }
+	KUBECONFIG="$(KUBECONFIG)" kubectl -n longhorn-system port-forward svc/longhorn-frontend 8081:80
 
 k9s:
 	@command -v k9s >/dev/null || { echo "missing k9s; install it before running this target" >&2; exit 1; }

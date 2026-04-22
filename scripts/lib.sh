@@ -147,6 +147,8 @@ load_env() {
   : "${ARGOCD_NAMESPACE:=argocd}"
   : "${ARGOCD_TARGET_REVISION:=main}"
   : "${ARGOCD_ROOT_PATH:=gitops/clusters/${CLUSTER_NAME}/root}"
+  : "${LONGHORN_NAMESPACE:=longhorn-system}"
+  : "${LONGHORN_APP_NAME:=longhorn}"
   : "${LONGHORN_VOLUME_NAME:=longhorn}"
   : "${LONGHORN_DISK_SELECTOR:=disk.dev_path == \"/dev/vdb\"}"
   : "${LONGHORN_VOLUME_MAX_SIZE:=16GiB}"

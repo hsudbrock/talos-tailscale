@@ -264,6 +264,18 @@ make argocd
 make argocd-status
 ```
 
+Once Longhorn is added as a child Argo CD Application, matching helper targets
+are available for routine operations:
+
+```bash
+make longhorn-status
+make longhorn-sync
+make longhorn-ui
+```
+
+`make longhorn-ui` port-forwards the Longhorn frontend service to
+`http://localhost:8081`.
+
 The Argo CD bootstrap downloads a pinned upstream install manifest into
 `.state/argocd/`, installs it into the `argocd` namespace, and applies a root
 `Application` pointing at:
@@ -285,6 +297,19 @@ Force a hard refresh and sync of the root Application after pushing changes:
 ```bash
 make argocd-sync
 ```
+
+The GitOps root now includes Longhorn as a child Argo CD Application. After
+pushing the `gitops/` changes, use:
+
+```bash
+make argocd-sync
+make longhorn-status
+```
+
+The Longhorn child application installs the pinned chart version `v1.11.1` into
+the `longhorn-system` namespace, sets the default data path to
+`/var/mnt/longhorn`, and uses a single default replica to match this repo's
+single-worker layout.
 
 Open k9s with the generated kubeconfig:
 
