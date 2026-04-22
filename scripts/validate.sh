@@ -22,8 +22,12 @@ fi
 export TALOSCONFIG
 export KUBECONFIG
 
+VALIDATE_CURL_MANIFEST="$(mktemp)"
+
 cleanup_smoke_workload() {
   kubectl delete -f "${ROOT_DIR}/config/kubernetes/cross-node-smoke.yaml" --ignore-not-found >/dev/null
+  kubectl delete -f "${VALIDATE_CURL_MANIFEST}" --ignore-not-found >/dev/null 2>&1 || true
+  rm -f "${VALIDATE_CURL_MANIFEST}"
 }
 
 trap cleanup_smoke_workload EXIT
@@ -52,9 +56,35 @@ log "Checking smoke pods distribution"
 kubectl get pods -l app=tailnet-smoke -o wide
 
 log "Checking smoke service reachability from an in-cluster curl pod"
-kubectl run tailnet-curl \
-  --rm \
-  -i \
-  --restart=Never \
-  --image=curlimages/curl:8.11.1 \
-  --command -- curl -fsS http://tailnet-smoke.default.svc.cluster.local/
+cat > "${VALIDATE_CURL_MANIFEST}" <<'YAML'
+apiVersion: v1
+kind: Pod
+metadata:
+  name: tailnet-curl
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: curl
+      image: curlimages/curl:8.11.1
+      command:
+        - curl
+        - -fsS
+        - http://tailnet-smoke.default.svc.cluster.local/
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+YAML
+
+kubectl apply -f "${VALIDATE_CURL_MANIFEST}"
+kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/tailnet-curl --timeout=2m >/dev/null
+kubectl logs tailnet-curl
+kubectl delete -f "${VALIDATE_CURL_MANIFEST}" >/dev/null

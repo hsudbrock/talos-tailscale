@@ -450,14 +450,15 @@ assert_log_contains "kubectl get nodes -o wide"
 assert_log_contains "kubectl apply -f"
 assert_log_contains "kubectl delete -f"
 assert_log_contains "--ignore-not-found"
+assert_log_contains "kubectl wait --for=jsonpath=\\{.status.phase\\}=Succeeded pod/tailnet-curl --timeout=2m"
+assert_log_contains "kubectl logs tailnet-curl"
 assert_contains "${ROOT_DIR}/config/kubernetes/cross-node-smoke.yaml" "replicas: 2"
 if grep -Fq "node-role.kubernetes.io/control-plane" "${ROOT_DIR}/config/kubernetes/cross-node-smoke.yaml"; then
   fail "smoke workload should schedule on workers without control-plane tolerations"
 fi
-if sed 's/\\ / /g; s/\\,/,/g' "${CALL_LOG}" | grep -Fq -- "--overrides="; then
-  fail "validation curl pod should schedule on workers without control-plane tolerations"
+if sed 's/\\ / /g; s/\\,/,/g' "${CALL_LOG}" | grep -Fq -- "kubectl run tailnet-curl"; then
+  fail "validation should use a PodSecurity-compliant pod manifest instead of kubectl run"
 fi
-assert_log_contains "curl -fsS http://tailnet-smoke.default.svc.cluster.local/"
 
 make -n logs-tailscale > "${TMP_DIR}/make-logs-tailscale.txt"
 assert_contains "${TMP_DIR}/make-logs-tailscale.txt" "127.0.0.1:50001"

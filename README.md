@@ -374,7 +374,7 @@ The validation covers:
 - etcd membership and health on the control-plane nodes
 - Kubernetes node readiness and InternalIP selection
 - A small workload scheduled by normal Kubernetes rules and service
-  reachability check
+  reachability check using a temporary PodSecurity-compliant curl pod
 
 To audit recurring Talos log noise without dumping raw logs, run:
 
@@ -400,8 +400,6 @@ Known acceptable transient messages:
 
 - During early bootstrap, Kubernetes nodes may be `NotReady` for a short time
   while flannel and kube-proxy come up.
-- `make validate` emits a PodSecurity warning for the temporary `tailnet-curl`
-  pod; the curl probe still succeeds and the pod is deleted afterward.
 
 Known avoidable log noise:
 
