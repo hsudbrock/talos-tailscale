@@ -311,6 +311,22 @@ assert_log_contains "-display vnc=127.0.0.1:5"
 assert_log_contains "-display vnc=127.0.0.1:6"
 assert_log_contains "-device VGA"
 
+restart_pid_before="$(<"${TEST_STATE_DIR}/talos-ts-worker1.pid")"
+NODE=talos-ts-worker1 VM_DISPLAY_BACKEND=vnc VM_DISPLAY_DEVICE=VGA VM_DISPLAY_WIDTH= VM_DISPLAY_HEIGHT= scripts/restart-node.sh
+restart_pid_after="$(<"${TEST_STATE_DIR}/talos-ts-worker1.pid")"
+[[ "${restart_pid_before}" != "${restart_pid_after}" ]] || fail "expected restart-node to replace worker pid"
+assert_file "${TEST_STATE_DIR}/talos-ts-worker1.pid"
+
+if NODE=talos-ts-missing scripts/restart-node.sh >"${TMP_DIR}/restart-node.out" 2>"${TMP_DIR}/restart-node.err"; then
+  fail "expected restart-node to fail for an unknown node"
+fi
+assert_contains "${TMP_DIR}/restart-node.err" "unknown node: talos-ts-missing"
+
+if scripts/restart-node.sh >"${TMP_DIR}/restart-node-missing.out" 2>"${TMP_DIR}/restart-node-missing.err"; then
+  fail "expected restart-node to fail when NODE is missing"
+fi
+assert_contains "${TMP_DIR}/restart-node-missing.err" "missing NODE; use NODE=<node-name>"
+
 rm -rf "${TEST_STATE_DIR}/disks" "${TEST_STATE_DIR}"/*.pid
 VM_DISPLAY_BACKEND=gtk VM_DISPLAY_DEVICE=VGA VM_DISPLAY_WIDTH= VM_DISPLAY_HEIGHT= scripts/start-vms.sh
 assert_log_contains "-display gtk,zoom-to-fit=on,show-menubar=on"
@@ -415,9 +431,13 @@ assert_contains "${TMP_DIR}/make-argocd-ui.txt" "port-forward svc/argocd-server 
 
 make help > "${TMP_DIR}/make-help.txt"
 assert_contains "${TMP_DIR}/make-help.txt" "make argocd     Install Argo CD and apply the root Application"
+assert_contains "${TMP_DIR}/make-help.txt" "make restart-node NODE=talos-ts-worker1 Restart a single VM by node name"
 assert_contains "${TMP_DIR}/make-help.txt" "make argocd-status Show Argo CD pods and rollout status"
 assert_contains "${TMP_DIR}/make-help.txt" "make argocd-sync Trigger a hard refresh and sync of the root Application"
 assert_contains "${TMP_DIR}/make-help.txt" "make argocd-ui  Port-forward the Argo CD API/UI to localhost:8080"
 assert_contains "${TMP_DIR}/make-help.txt" "make argocd-password Print the initial Argo CD admin password"
+
+make -n restart-node NODE=talos-ts-worker1 > "${TMP_DIR}/make-restart-node.txt"
+assert_contains "${TMP_DIR}/make-restart-node.txt" "NODE=\"talos-ts-worker1\" scripts/restart-node.sh"
 
 echo "script behavior tests passed"

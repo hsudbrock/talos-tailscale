@@ -104,6 +104,12 @@ Start the VMs:
 make start
 ```
 
+Restart a single VM by node name:
+
+```bash
+make restart-node NODE=talos-ts-worker1
+```
+
 The VM boot order prefers disk first and falls back to the Talos ISO. On a fresh
 empty disk, QEMU boots the ISO so Talos can install. After `make apply` installs
 Talos to the VM disk and reboots, the same VM boots from disk instead of falling
