@@ -4,7 +4,7 @@ KUBECONFIG ?= $(STATE_DIR)/kubeconfig/config
 
 .DEFAULT_GOAL := help
 
-.PHONY: help env image configs start restart-node apply bootstrap bootstrap-from-scratch validate logs-audit argocd argocd-status argocd-sync argocd-ui argocd-password longhorn-status longhorn-sync longhorn-ui k9s stop clean clean-disks reset test test-local vnc-cp1 vnc-cp2 vnc-cp3 vnc-worker1 vnc-worker2 vnc-worker3 logs-tailscale logs-tailscale-cp1 logs-tailscale-cp2 logs-tailscale-cp3 logs-tailscale-worker1 logs-tailscale-worker2 logs-tailscale-worker3
+.PHONY: help env image configs start restart-node apply bootstrap bootstrap-from-scratch validate logs-audit argocd argocd-status argocd-sync argocd-ui argocd-password longhorn-status longhorn-sync longhorn-ui k9s stop clean clean-disks reset test test-local secrets-validate sealed-secrets-backup sealed-secrets-restore vnc-cp1 vnc-cp2 vnc-cp3 vnc-worker1 vnc-worker2 vnc-worker3 logs-tailscale logs-tailscale-cp1 logs-tailscale-cp2 logs-tailscale-cp3 logs-tailscale-worker1 logs-tailscale-worker2 logs-tailscale-worker3
 
 help:
 	@printf 'Talos over Tailscale local test targets:\n\n'
@@ -31,6 +31,9 @@ help:
 	@printf '  make clean      Remove generated .state after stopping VMs\n'
 	@printf '  make clean-disks Stop VMs and remove only VM disks\n'
 	@printf '  make test       Run local non-secret validation checks\n'
+	@printf '  make secrets-validate Check GitOps manifests for plaintext secret mistakes\n'
+	@printf '  make sealed-secrets-backup Back up the Sealed Secrets private key to .state/backups\n'
+	@printf '  make sealed-secrets-restore Restore the Sealed Secrets private key before controller sync\n'
 	@printf '  make vnc-cp1    Open talos-ts-cp1 VNC console with TigerVNC\n'
 	@printf '  make logs-tailscale Show ext-tailscale logs from all nodes\n'
 	@printf '\nTypical flow:\n'
@@ -134,8 +137,17 @@ reset: clean
 test: test-local
 
 test-local:
-	bash -n scripts/lib.sh scripts/prepare-image.sh scripts/generate-configs.sh scripts/start-vms.sh scripts/apply-configs.sh scripts/bootstrap.sh scripts/bootstrap-argocd.sh scripts/validate.sh scripts/logs-audit.sh scripts/stop-vms.sh
+	bash -n scripts/lib.sh scripts/prepare-image.sh scripts/generate-configs.sh scripts/start-vms.sh scripts/apply-configs.sh scripts/bootstrap.sh scripts/bootstrap-argocd.sh scripts/validate.sh scripts/logs-audit.sh scripts/validate-gitops-secrets.sh scripts/backup-sealed-secrets-key.sh scripts/restore-sealed-secrets-key.sh scripts/stop-vms.sh
 	bash tests/script-behavior.sh
+
+secrets-validate:
+	scripts/validate-gitops-secrets.sh
+
+sealed-secrets-backup:
+	scripts/backup-sealed-secrets-key.sh
+
+sealed-secrets-restore:
+	scripts/restore-sealed-secrets-key.sh
 
 vnc-cp1:
 	xtigervncviewer -RemoteResize=0 127.0.0.1::5901

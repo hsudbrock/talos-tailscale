@@ -29,6 +29,7 @@ IPs and etcd advertised addresses prefer the Tailscale CGNAT range
 - `kubectl`
 - `k9s` for the optional `make k9s` target
 - `curl`
+- `kubeseal` for creating GitOps-managed Sealed Secrets
 - A Tailscale tailnet with MagicDNS enabled
 - A reusable or ephemeral Tailscale auth key
 
@@ -324,6 +325,94 @@ KUBECONFIG=.state/kubeconfig/config kubectl exec -n storage-smoke deploy/longhor
 ```
 
 That second command should print `longhorn persistent storage ok`.
+
+## Secret bootstrap
+
+This repo uses Bitnami Sealed Secrets as the initial bootstrap mechanism for
+non-public Kubernetes secrets.
+
+Decision: Sealed Secrets is the default here instead of SOPS with age because
+the current Argo CD bootstrap applies plain Git manifests and Helm charts.
+SOPS with age is a good operator workflow, but Argo CD cannot decrypt SOPS files
+without adding repo-server plugin or sidecar configuration first. Sealed Secrets
+keeps decryption inside the cluster through a controller and lets Argo CD sync
+encrypted `SealedSecret` resources without handling private keys.
+
+The GitOps root installs the Sealed Secrets controller from the pinned Helm
+chart version `2.17.3` into the `sealed-secrets` namespace. It also creates a
+`secret-smoke` namespace for testing sealed secret delivery.
+
+`make argocd` automatically looks for a saved key at
+`.state/backups/sealed-secrets-key.yaml` and restores it before the controller
+syncs. This keeps the cluster on the same public/private key pair across
+from-scratch rebuilds as long as that backup file survives. If you keep the key
+somewhere else, set this in `.env`:
+
+```bash
+SEALED_SECRETS_BACKUP_FILE=/secure/offline/location/talos-tailnet-local-sealed-secrets-key.yaml
+```
+
+After Argo CD has synced the root app, confirm the controller is ready:
+
+```bash
+KUBECONFIG=.state/kubeconfig/config kubectl rollout status deploy/sealed-secrets-controller -n sealed-secrets --timeout=5m
+```
+
+Create and commit a sealed smoke secret like this:
+
+```bash
+KUBECONFIG=.state/kubeconfig/config kubeseal \
+  --controller-name sealed-secrets-controller \
+  --controller-namespace sealed-secrets \
+  --fetch-cert > .state/sealed-secrets.pem
+
+kubectl create secret generic secret-smoke \
+  --namespace secret-smoke \
+  --from-literal=message='sealed secret delivery ok' \
+  --dry-run=client \
+  -o yaml |
+  kubeseal \
+    --cert .state/sealed-secrets.pem \
+    --format yaml > gitops/clusters/talos-tailnet-local/root/secret-smoke.yaml
+
+make secrets-validate
+```
+
+Review `gitops/clusters/talos-tailnet-local/root/secret-smoke.yaml` before
+committing it. It must be `kind: SealedSecret` and must contain
+`spec.encryptedData`, not `kind: Secret`, `data`, or `stringData`.
+
+Commit and push the sealed manifest, then sync Argo CD:
+
+```bash
+make argocd-sync
+KUBECONFIG=.state/kubeconfig/config kubectl get secret secret-smoke -n secret-smoke
+```
+
+The decrypted Kubernetes `Secret` should exist only in the cluster.
+
+Recovery depends on the controller sealing key. Back it up after the controller
+is installed:
+
+```bash
+make sealed-secrets-backup
+```
+
+The target writes `.state/backups/sealed-secrets-key.yaml`, refuses to
+overwrite it unless `SEALED_SECRETS_BACKUP_FORCE=true` is set, and locks down
+the local file permissions. Move an encrypted copy to a password manager,
+encrypted backup vault, or offline encrypted disk.
+
+To restore the key manually before syncing the controller:
+
+```bash
+make sealed-secrets-restore
+```
+
+Do not commit plaintext `Secret` manifests, `.env`, `.state/`, fetched
+certificates, controller private keys, age keys, passwords, tokens, kubeconfigs,
+or unsealed temporary files. Use `make secrets-validate` or `make test` before
+committing GitOps secret changes.
 
 Open k9s with the generated kubeconfig:
 

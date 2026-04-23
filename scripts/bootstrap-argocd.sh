@@ -35,6 +35,8 @@ YAML
 log "Applying Argo CD namespace"
 kubectl apply -f "${NAMESPACE_MANIFEST}"
 
+SEALED_SECRETS_RESTORE_OPTIONAL=true "${ROOT_DIR}/scripts/restore-sealed-secrets-key.sh"
+
 log "Installing Argo CD into ${ARGOCD_NAMESPACE}"
 kubectl apply -n "${ARGOCD_NAMESPACE}" --server-side --force-conflicts -f "${INSTALL_MANIFEST}" --request-timeout=5m
 

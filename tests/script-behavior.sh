@@ -139,6 +139,23 @@ SH
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'kubectl %q\n' "$*" >> "${CALL_LOG}"
+if [[ "$*" == *"get secret -n sealed-secrets -l sealedsecrets.bitnami.com/sealed-secrets-key -o yaml"* ]]; then
+  cat <<'YAML'
+apiVersion: v1
+items:
+  - apiVersion: v1
+    data:
+      tls.crt: fake-crt
+      tls.key: fake-key
+    kind: Secret
+    metadata:
+      labels:
+        sealedsecrets.bitnami.com/sealed-secrets-key: active
+      name: sealed-secrets-key-test
+      namespace: sealed-secrets
+kind: List
+YAML
+fi
 SH
 
   cat > "${FAKE_BIN}/k9s" <<'SH'
@@ -560,8 +577,18 @@ assert_contains "${TMP_DIR}/make-longhorn-ui.txt" "port-forward svc/longhorn-fro
 
 assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/kustomization.yaml" "platform-longhorn-namespace.yaml"
 assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/kustomization.yaml" "platform-longhorn.yaml"
+assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/kustomization.yaml" "platform-sealed-secrets-namespace.yaml"
+assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/kustomization.yaml" "platform-sealed-secrets.yaml"
+assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/kustomization.yaml" "secret-smoke-namespace.yaml"
 assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/kustomization.yaml" "storage-smoke-namespace.yaml"
 assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/kustomization.yaml" "storage-smoke.yaml"
+assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/platform-sealed-secrets-namespace.yaml" "name: sealed-secrets"
+assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/platform-sealed-secrets.yaml" "name: sealed-secrets"
+assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/platform-sealed-secrets.yaml" "repoURL: https://bitnami-labs.github.io/sealed-secrets"
+assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/platform-sealed-secrets.yaml" "targetRevision: 2.17.3"
+assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/platform-sealed-secrets.yaml" "fullnameOverride: sealed-secrets-controller"
+assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/platform-sealed-secrets.yaml" "namespace: sealed-secrets"
+assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/secret-smoke-namespace.yaml" "name: secret-smoke"
 assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/platform-longhorn-namespace.yaml" "name: longhorn-system"
 assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/platform-longhorn-namespace.yaml" "pod-security.kubernetes.io/enforce: privileged"
 assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/platform-longhorn.yaml" "name: longhorn"
@@ -578,6 +605,25 @@ assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/storage-sm
 assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/storage-smoke.yaml" "name: longhorn-demo"
 assert_contains "${ROOT_DIR}/gitops/clusters/talos-tailnet-local/root/storage-smoke.yaml" "exec httpd -f -p 8080 -h /data"
 
+scripts/validate-gitops-secrets.sh
+
+scripts/backup-sealed-secrets-key.sh
+assert_file "${TEST_STATE_DIR}/backups/sealed-secrets-key.yaml"
+assert_contains "${TEST_STATE_DIR}/backups/sealed-secrets-key.yaml" "sealedsecrets.bitnami.com/sealed-secrets-key"
+assert_contains "${TEST_STATE_DIR}/backups/sealed-secrets-key.yaml" "tls.key"
+assert_log_contains "get secret -n sealed-secrets -l sealedsecrets.bitnami.com/sealed-secrets-key -o yaml"
+
+if scripts/backup-sealed-secrets-key.sh >"${TMP_DIR}/sealed-secrets-backup-repeat.out" 2>"${TMP_DIR}/sealed-secrets-backup-repeat.err"; then
+  fail "expected sealed secrets backup to refuse overwriting an existing backup"
+fi
+assert_contains "${TMP_DIR}/sealed-secrets-backup-repeat.err" "refusing to overwrite existing backup"
+
+SEALED_SECRETS_BACKUP_FORCE=true scripts/backup-sealed-secrets-key.sh
+
+scripts/restore-sealed-secrets-key.sh
+assert_log_contains "kubectl create namespace sealed-secrets --dry-run=client -o yaml"
+assert_log_contains "kubectl apply -f ${TEST_STATE_DIR}/backups/sealed-secrets-key.yaml"
+
 make help > "${TMP_DIR}/make-help.txt"
 assert_contains "${TMP_DIR}/make-help.txt" "make argocd     Install Argo CD and apply the root Application"
 assert_contains "${TMP_DIR}/make-help.txt" "make restart-node NODE=talos-ts-worker1 Restart a single VM by node name"
@@ -589,11 +635,23 @@ assert_contains "${TMP_DIR}/make-help.txt" "make argocd-password Print the initi
 assert_contains "${TMP_DIR}/make-help.txt" "make longhorn-status Show Longhorn pods and rollout status"
 assert_contains "${TMP_DIR}/make-help.txt" "make longhorn-sync Trigger a hard refresh and sync of the Longhorn Application"
 assert_contains "${TMP_DIR}/make-help.txt" "make longhorn-ui Port-forward the Longhorn UI to localhost:8081"
+assert_contains "${TMP_DIR}/make-help.txt" "make secrets-validate Check GitOps manifests for plaintext secret mistakes"
+assert_contains "${TMP_DIR}/make-help.txt" "make sealed-secrets-backup Back up the Sealed Secrets private key to .state/backups"
+assert_contains "${TMP_DIR}/make-help.txt" "make sealed-secrets-restore Restore the Sealed Secrets private key before controller sync"
 
 make -n restart-node NODE=talos-ts-worker1 > "${TMP_DIR}/make-restart-node.txt"
 assert_contains "${TMP_DIR}/make-restart-node.txt" "NODE=\"talos-ts-worker1\" scripts/restart-node.sh"
 
 make -n bootstrap-from-scratch > "${TMP_DIR}/make-bootstrap-from-scratch.txt"
 assert_contains "${TMP_DIR}/make-bootstrap-from-scratch.txt" "scripts/bootstrap-from-scratch.sh"
+
+make -n secrets-validate > "${TMP_DIR}/make-secrets-validate.txt"
+assert_contains "${TMP_DIR}/make-secrets-validate.txt" "scripts/validate-gitops-secrets.sh"
+
+make -n sealed-secrets-backup > "${TMP_DIR}/make-sealed-secrets-backup.txt"
+assert_contains "${TMP_DIR}/make-sealed-secrets-backup.txt" "scripts/backup-sealed-secrets-key.sh"
+
+make -n sealed-secrets-restore > "${TMP_DIR}/make-sealed-secrets-restore.txt"
+assert_contains "${TMP_DIR}/make-sealed-secrets-restore.txt" "scripts/restore-sealed-secrets-key.sh"
 
 echo "script behavior tests passed"
