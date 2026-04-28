@@ -312,6 +312,43 @@ the `longhorn-system` namespace, sets the default data path to
 `/var/mnt/longhorn`, and uses a single default replica to match this repo's
 single-worker layout.
 
+The GitOps root also includes Metrics Server as a child Argo CD Application.
+After pushing the `gitops/` changes, use:
+
+```bash
+make argocd-sync
+KUBECONFIG=.state/kubeconfig/config kubectl -n argocd get application metrics-server
+KUBECONFIG=.state/kubeconfig/config kubectl -n kube-system rollout status deploy/metrics-server --timeout=5m
+```
+
+The Metrics Server child application installs the pinned chart version `3.13.0`
+into `kube-system`. This repo sets
+`--kubelet-preferred-address-types=InternalIP,Hostname` because the Talos nodes
+advertise Tailscale `100.x` addresses as their Kubernetes `InternalIP` values,
+and those are the addresses that remain reachable and stable for this cluster.
+This repo also sets `--kubelet-insecure-tls` because the local Talos kubelet
+serving certificates do not include those `100.x` node addresses as IP SANs, so
+full kubelet TLS verification fails when Metrics Server connects over the
+Tailscale `InternalIP` path.
+
+After syncing Argo CD, validate resource metrics with:
+
+```bash
+KUBECONFIG=.state/kubeconfig/config kubectl top nodes
+KUBECONFIG=.state/kubeconfig/config kubectl top pods -n kube-system
+```
+
+If `kubectl top` fails, start with:
+
+```bash
+KUBECONFIG=.state/kubeconfig/config kubectl get apiservice v1beta1.metrics.k8s.io
+KUBECONFIG=.state/kubeconfig/config kubectl logs -n kube-system deploy/metrics-server
+```
+
+If the logs show `x509: cannot validate certificate ... because it doesn't
+contain any IP SANs`, confirm that the chart still includes
+`--kubelet-insecure-tls` alongside the `InternalIP` address preference.
+
 The GitOps root also includes a tiny `storage-smoke` workload that consumes a
 Longhorn PVC named `longhorn-demo`. It uses the default `longhorn` storage
 class and serves the persisted `/data/index.html` content over HTTP from a

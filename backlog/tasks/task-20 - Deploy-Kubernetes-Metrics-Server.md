@@ -1,10 +1,11 @@
 ---
 id: TASK-20
 title: Deploy Kubernetes Metrics Server
-status: To Do
+status: In Progress
 assignee:
   - '@Codex'
 created_date: '2026-04-23 14:32'
+updated_date: '2026-04-28 20:15'
 labels:
   - metrics
   - kubernetes

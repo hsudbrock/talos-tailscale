@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - platform-sealed-secrets-namespace.yaml
   - platform-sealed-secrets.yaml
+  - platform-metrics-server.yaml
   - platform-longhorn-namespace.yaml
   - platform-longhorn.yaml
   - secret-smoke-namespace.yaml
