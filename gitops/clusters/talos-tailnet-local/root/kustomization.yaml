@@ -6,5 +6,6 @@ resources:
   - platform-longhorn-namespace.yaml
   - platform-longhorn.yaml
   - secret-smoke-namespace.yaml
+  - secret-smoke.yaml
   - storage-smoke-namespace.yaml
   - storage-smoke.yaml
