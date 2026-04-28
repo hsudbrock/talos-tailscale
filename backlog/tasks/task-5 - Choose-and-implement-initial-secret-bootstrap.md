@@ -1,11 +1,11 @@
 ---
 id: TASK-5
 title: Choose and implement initial secret bootstrap
-status: In Progress
+status: Done
 assignee:
   - Codex
 created_date: '2026-04-19 07:18'
-updated_date: '2026-04-23 14:27'
+updated_date: '2026-04-28 20:14'
 labels:
   - secrets
   - gitops
@@ -27,7 +27,7 @@ Define the first safe mechanism for committing non-public Kubernetes secret mate
 <!-- AC:BEGIN -->
 - [x] #1 Decision is documented between SOPS + age and Sealed Secrets.
 - [x] #2 No plaintext secrets are committed.
-- [ ] #3 GitOps can deploy at least one test secret from the chosen mechanism.
+- [x] #3 GitOps can deploy at least one test secret from the chosen mechanism.
 - [x] #4 README documents key creation, local operator workflow, recovery expectations, and what must not be committed.
 - [x] #5 make test or a new local validation target checks secret manifests for plaintext placeholder mistakes.
 <!-- AC:END -->
@@ -39,3 +39,9 @@ Implemented initial secret bootstrap around Bitnami Sealed Secrets because the c
 
 Added Sealed Secrets key restore support. make sealed-secrets-backup saves the controller key, make sealed-secrets-restore reapplies it, and make argocd now performs an optional restore before applying the GitOps root so from-scratch clusters reuse the same sealing key when a backup is present. SEALED_SECRETS_BACKUP_FILE can point at an external encrypted/offline backup location when .state is cleaned.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Verified the Sealed Secrets smoke test end-to-end on April 28, 2026. Generated gitops/clusters/talos-tailnet-local/root/secret-smoke.yaml, synced Argo CD against remote main, and confirmed the sealedsecret.bitnami.com/secret-smoke resource produced a decrypted Kubernetes Secret in the secret-smoke namespace with message "sealed secret delivery ok".
+<!-- SECTION:FINAL_SUMMARY:END -->
