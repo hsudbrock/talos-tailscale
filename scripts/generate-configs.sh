@@ -25,6 +25,10 @@ LONGHORN_DATA_PATH="/var/mnt/${LONGHORN_VOLUME_NAME}"
 LONGHORN_DISK_SELECTOR="${LONGHORN_DISK_SELECTOR:-disk.dev_path == \"/dev/vdb\"}"
 LONGHORN_VOLUME_MAX_SIZE="${LONGHORN_VOLUME_MAX_SIZE:-16GiB}"
 
+if [[ "${CLUSTER_CNI}" == "cilium" ]]; then
+  "${ROOT_DIR}/scripts/render-cilium-manifest.sh"
+fi
+
 rm -rf "${BASE_DIR}" "${OUT_DIR}" "$(state_path patches/nodes)"
 mkdir -p "${BASE_DIR}" "${OUT_DIR}" "$(state_path patches/nodes)"
 
@@ -34,7 +38,20 @@ for node in "${NODES[@]}"; do
 done
 SAN_ARGS+=(--additional-sans "localhost" --additional-sans "127.0.0.1")
 
-cat > "${PATCH_COMMON}" <<YAML
+if [[ "${CLUSTER_CNI}" == "cilium" ]]; then
+  cat > "${PATCH_COMMON}" <<YAML
+machine:
+  kubelet:
+    nodeIP:
+      validSubnets:
+        - ${TAILSCALE_CIDR}
+cluster:
+  network:
+    cni:
+      name: none
+YAML
+else
+  cat > "${PATCH_COMMON}" <<YAML
 machine:
   kubelet:
     nodeIP:
@@ -48,6 +65,7 @@ cluster:
         extraArgs:
           - --iface=tailscale0
 YAML
+fi
 
 {
   printf -- '---\n'
@@ -71,6 +89,15 @@ cluster:
     advertisedSubnets:
       - ${TAILSCALE_CIDR}
 YAML
+
+if [[ "${CLUSTER_CNI}" == "cilium" ]]; then
+  {
+    printf '  inlineManifests:\n'
+    printf '    - name: cilium\n'
+    printf '      contents: |\n'
+    sed 's/^/        /' "$(state_path cilium/cilium-bootstrap.yaml)"
+  } >> "${PATCH_CONTROL_PLANE}"
+fi
 
 cat > "${PATCH_WORKER}" <<YAML
 machine:

@@ -27,9 +27,11 @@ IPs and etcd advertised addresses prefer the Tailscale CGNAT range
 - `qemu-system-x86_64`
 - `qemu-img`
 - `kubectl`
+- `helm` for rendering the pinned Cilium bootstrap manifest during `make configs`
 - `k9s` for the optional `make k9s` target
 - `curl`
 - `kubeseal` for creating GitOps-managed Sealed Secrets
+- `hubble` for optional local Hubble Relay queries
 - A Tailscale tailnet with MagicDNS enabled
 - A reusable or ephemeral Tailscale auth key
 
@@ -576,15 +578,31 @@ cluster:
       - 100.64.0.0/10
   network:
     cni:
-      name: flannel
-      flannel:
-        extraArgs:
-          - --iface=tailscale0
+      name: none
 ```
 
-The flannel argument is required in this QEMU topology. Without it, flannel
-auto-detects the identical per-VM QEMU NAT address `10.0.2.15`, which breaks
-pod-to-pod and ClusterIP service routing.
+By default this repo bootstraps Cilium instead of Talos-managed flannel. The
+generated control-plane machine configs embed a rendered Cilium manifest as a
+Talos `inlineManifest`, which lets cluster networking come up before Argo CD is
+available. The rendered Cilium configuration keeps `kube-proxy`, uses tunnel
+mode with VXLAN, and enables Hubble Relay/UI for flow inspection.
+
+The pinned Cilium bootstrap version comes from `CILIUM_VERSION` in `.env`
+(default `1.19.3`) and is rendered on demand by `scripts/render-cilium-manifest.sh`.
+The chosen first-pass mode is deliberately conservative for this topology:
+
+- Talos disables its built-in CNI by setting `cluster.network.cni.name: none`
+- Cilium runs as the primary CNI from bootstrap
+- Routing stays in VXLAN tunnel mode instead of native routing
+- `kube-proxy` remains enabled instead of switching to eBPF kube-proxy replacement
+- Hubble Relay and Hubble UI are enabled for flow visibility
+
+That combination avoids taking on native-routing and kube-proxy replacement
+debugging at the same time as the initial flannel-to-Cilium migration.
+
+If you need to fall back to the old flannel path while debugging, set
+`CLUSTER_CNI=flannel` in `.env`, regenerate configs, and re-apply or rebuild
+the cluster.
 
 Generated worker configs also include a Longhorn-specific kubelet bind mount and
 Talos user volume declaration:
@@ -616,6 +634,7 @@ Run:
 
 ```bash
 make validate
+make cilium-validate
 ```
 
 The validation covers:
@@ -626,6 +645,10 @@ The validation covers:
 - Kubernetes node readiness and InternalIP selection
 - A small workload scheduled by normal Kubernetes rules and service
   reachability check using a temporary PodSecurity-compliant curl pod
+- A standard Kubernetes `NetworkPolicy` smoke test with one allowed and one
+  denied client path
+- Hubble flow output that shows forwarded DNS/HTTP traffic and dropped
+  policy-denied TCP traffic
 
 To audit recurring Talos log noise without dumping raw logs, run:
 
@@ -647,10 +670,18 @@ make logs-tailscale-cp2
 make logs-tailscale-cp3
 ```
 
+To inspect Hubble visually:
+
+```bash
+make hubble-ui
+```
+
+Then browse to `http://localhost:12000`.
+
 Known acceptable transient messages:
 
 - During early bootstrap, Kubernetes nodes may be `NotReady` for a short time
-  while flannel and kube-proxy come up.
+  while Cilium and kube-proxy come up.
 
 Known avoidable log noise:
 

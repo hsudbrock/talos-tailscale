@@ -100,6 +100,8 @@ load_env() {
   : "${CLUSTER_NAME:=talos-tailnet-local}"
   : "${TALOS_VERSION:=v1.11.5}"
   : "${KUBERNETES_VERSION:=1.34.1}"
+  : "${CLUSTER_CNI:=cilium}"
+  : "${CILIUM_VERSION:=1.19.3}"
   : "${TAILSCALE_CIDR:=100.64.0.0/10}"
   : "${TAILSCALE_ACCEPT_DNS:=false}"
   : "${TAILSCALE_DNS_RESOLVERS:=100.100.100.100 9.9.9.9 1.1.1.1 8.8.8.8}"

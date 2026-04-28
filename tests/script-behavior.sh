@@ -158,6 +158,32 @@ YAML
 fi
 SH
 
+  cat > "${FAKE_BIN}/helm" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'helm %q\n' "$*" >> "${CALL_LOG}"
+case "${1:-}" in
+  repo)
+    exit 0
+    ;;
+  template)
+    cat <<'YAML'
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: cilium
+  namespace: kube-system
+YAML
+    ;;
+  show)
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+SH
+
   cat > "${FAKE_BIN}/k9s" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -360,8 +386,7 @@ assert_log_contains "--config-patch-worker @${TEST_STATE_DIR}/patches/common.yam
 assert_log_contains "--config-patch-worker @${TEST_STATE_DIR}/patches/worker.yaml"
 assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "validSubnets:"
 assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "100.64.0.0/10"
-assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "flannel:"
-assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "--iface=tailscale0"
+assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "name: none"
 assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "kind: ResolverConfig"
 assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "address: 100.100.100.100"
 assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "address: 9.9.9.9"
@@ -370,6 +395,8 @@ assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "address: 8.8.8.8"
 assert_contains "${TEST_STATE_DIR}/patches/common.yaml" "tail4d7760.ts.net"
 assert_contains "${TEST_STATE_DIR}/patches/control-plane.yaml" "advertisedSubnets:"
 assert_contains "${TEST_STATE_DIR}/patches/control-plane.yaml" "100.64.0.0/10"
+assert_contains "${TEST_STATE_DIR}/patches/control-plane.yaml" "inlineManifests:"
+assert_contains "${TEST_STATE_DIR}/patches/control-plane.yaml" "name: cilium"
 assert_contains "${TEST_STATE_DIR}/patches/worker.yaml" "destination: /var/mnt/longhorn"
 assert_contains "${TEST_STATE_DIR}/patches/worker.yaml" "source: /var/mnt/longhorn"
 assert_contains "${TEST_STATE_DIR}/patches/worker.yaml" "rshared"

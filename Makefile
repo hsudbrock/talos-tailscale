@@ -4,7 +4,7 @@ KUBECONFIG ?= $(STATE_DIR)/kubeconfig/config
 
 .DEFAULT_GOAL := help
 
-.PHONY: help env image configs start restart-node apply bootstrap bootstrap-from-scratch validate logs-audit argocd argocd-status argocd-sync argocd-ui argocd-password longhorn-status longhorn-sync longhorn-ui k9s stop clean clean-disks reset test test-local secrets-validate sealed-secrets-backup sealed-secrets-restore vnc-cp1 vnc-cp2 vnc-cp3 vnc-worker1 vnc-worker2 vnc-worker3 logs-tailscale logs-tailscale-cp1 logs-tailscale-cp2 logs-tailscale-cp3 logs-tailscale-worker1 logs-tailscale-worker2 logs-tailscale-worker3
+.PHONY: help env image configs start restart-node apply bootstrap bootstrap-from-scratch validate cilium-validate logs-audit argocd argocd-status argocd-sync argocd-ui argocd-password longhorn-status longhorn-sync longhorn-ui hubble-ui k9s stop clean clean-disks reset test test-local secrets-validate sealed-secrets-backup sealed-secrets-restore vnc-cp1 vnc-cp2 vnc-cp3 vnc-worker1 vnc-worker2 vnc-worker3 logs-tailscale logs-tailscale-cp1 logs-tailscale-cp2 logs-tailscale-cp3 logs-tailscale-worker1 logs-tailscale-worker2 logs-tailscale-worker3
 
 help:
 	@printf 'Talos over Tailscale local test targets:\n\n'
@@ -17,6 +17,7 @@ help:
 	@printf '  make bootstrap  Bootstrap etcd/Kubernetes and fetch kubeconfig\n'
 	@printf '  make bootstrap-from-scratch Rebuild disks, start VMs, apply configs, and bootstrap\n'
 	@printf '  make validate   Validate Talos, Kubernetes, etcd, and smoke workload\n'
+	@printf '  make cilium-validate Validate NetworkPolicy enforcement and Hubble flows\n'
 	@printf '  make logs-audit Summarize recurring Talos log warnings by node/service\n'
 	@printf '  make argocd     Install Argo CD and apply the root Application\n'
 	@printf '  make argocd-status Show Argo CD pods and rollout status\n'
@@ -26,6 +27,7 @@ help:
 	@printf '  make longhorn-status Show Longhorn pods and rollout status\n'
 	@printf '  make longhorn-sync Trigger a hard refresh and sync of the Longhorn Application\n'
 	@printf '  make longhorn-ui Port-forward the Longhorn UI to localhost:8081\n'
+	@printf '  make hubble-ui   Port-forward the Hubble UI to localhost:12000\n'
 	@printf '  make k9s        Open k9s with the generated kubeconfig\n'
 	@printf '  make stop       Stop the QEMU VMs\n'
 	@printf '  make clean      Remove generated .state after stopping VMs\n'
@@ -74,6 +76,9 @@ bootstrap-from-scratch:
 validate:
 	scripts/validate.sh
 
+cilium-validate:
+	scripts/validate-cilium.sh
+
 logs-audit:
 	scripts/logs-audit.sh
 
@@ -117,6 +122,10 @@ longhorn-sync:
 longhorn-ui:
 	@[[ -f "$(KUBECONFIG)" ]] || { echo "missing $(KUBECONFIG); run make bootstrap first" >&2; exit 1; }
 	KUBECONFIG="$(KUBECONFIG)" kubectl -n longhorn-system port-forward svc/longhorn-frontend 8081:80
+
+hubble-ui:
+	@[[ -f "$(KUBECONFIG)" ]] || { echo "missing $(KUBECONFIG); run make bootstrap first" >&2; exit 1; }
+	KUBECONFIG="$(KUBECONFIG)" kubectl -n kube-system port-forward svc/hubble-ui 12000:80
 
 k9s:
 	@command -v k9s >/dev/null || { echo "missing k9s; install it before running this target" >&2; exit 1; }
