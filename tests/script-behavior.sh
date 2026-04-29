@@ -44,15 +44,22 @@ assert_not_contains() {
 
 assert_log_contains() {
   local expected="$1"
-  sed 's/\\ / /g; s/\\,/,/g' "${CALL_LOG}" | grep -Fq -- "${expected}" ||
-    fail "expected call log to contain: ${expected}"
+  local normalized
+  normalized="$(sed 's/\\ / /g; s/\\,/,/g' "${CALL_LOG}")"
+  grep -Fq -- "${expected}" <<< "${normalized}" || fail "expected call log to contain: ${expected}"
 }
 
 assert_log_not_contains() {
   local unexpected="$1"
-  if sed 's/\\ / /g; s/\\,/,/g' "${CALL_LOG}" | grep -Fq -- "${unexpected}"; then
+  local normalized
+  normalized="$(sed 's/\\ / /g; s/\\,/,/g' "${CALL_LOG}")"
+  if grep -Fq -- "${unexpected}" <<< "${normalized}"; then
     fail "expected call log not to contain: ${unexpected}"
   fi
+}
+
+assert_not_file() {
+  [[ ! -f "$1" ]] || fail "expected no file: $1"
 }
 
 write_fake_bin() {
@@ -96,6 +103,36 @@ if [[ "$*" == *"https://raw.githubusercontent.com/argoproj/argo-cd/v3.3.6/manife
   printf 'apiVersion: v1\nkind: List\nitems: []\n' > "${out}"
   exit 0
 fi
+if [[ "$*" == *"https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2"* ]]; then
+  out=""
+  prev=""
+  for arg in "$@"; do
+    if [[ "${prev}" == "-o" ]]; then
+      out="${arg}"
+      break
+    fi
+    prev="${arg}"
+  done
+  [[ -n "${out}" ]]
+  mkdir -p "$(dirname "${out}")"
+  printf 'fake debian image\n' > "${out}"
+  exit 0
+fi
+if [[ "$*" == *"https://github.com/juanfont/headscale/releases/download/v0.28.0/headscale_0.28.0_linux_amd64.deb"* ]]; then
+  out=""
+  prev=""
+  for arg in "$@"; do
+    if [[ "${prev}" == "-o" ]]; then
+      out="${arg}"
+      break
+    fi
+    prev="${arg}"
+  done
+  [[ -n "${out}" ]]
+  mkdir -p "$(dirname "${out}")"
+  printf 'fake headscale deb\n' > "${out}"
+  exit 0
+fi
 echo "unexpected curl args: $*" >&2
 exit 2
 SH
@@ -111,7 +148,19 @@ SH
 set -euo pipefail
 printf 'qemu-img %q\n' "$*" >> "${CALL_LOG}"
 if [[ "${1:-}" == "create" ]]; then
-  file="${4:-}"
+  shift
+  while (($#)); do
+    case "$1" in
+      -f|-F|-b)
+        shift 2
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+  file="${1:-}"
+  [[ -n "${file}" ]]
   mkdir -p "$(dirname "${file}")"
   printf 'fake disk\n' > "${file}"
 fi
@@ -133,6 +182,70 @@ done
 [[ -n "${pidfile}" ]]
 mkdir -p "$(dirname "${pidfile}")"
 printf '%s\n' "$$" > "${pidfile}"
+SH
+
+  cat > "${FAKE_BIN}/ssh-keygen" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ssh-keygen %q\n' "$*" >> "${CALL_LOG}"
+file=""
+while (($#)); do
+  case "$1" in
+    -f)
+      file="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+[[ -n "${file}" ]]
+mkdir -p "$(dirname "${file}")"
+printf 'fake-private-key\n' > "${file}"
+printf 'ssh-ed25519 fake-public-key\n' > "${file}.pub"
+SH
+
+  cat > "${FAKE_BIN}/packer" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'packer %q\n' "$*" >> "${CALL_LOG}"
+subcmd="${1:-}"
+shift || true
+case "${subcmd}" in
+  init)
+    exit 0
+    ;;
+  build)
+    output_directory=""
+    output_image_name=""
+    while (($#)); do
+      case "$1" in
+        -var)
+          value="$2"
+          case "${value}" in
+            output_directory=*)
+              output_directory="${value#output_directory=}"
+              ;;
+            output_image_name=*)
+              output_image_name="${value#output_image_name=}"
+              ;;
+          esac
+          shift 2
+          ;;
+        *)
+          shift
+          ;;
+      esac
+    done
+    [[ -n "${output_directory}" && -n "${output_image_name}" ]]
+    mkdir -p "${output_directory}"
+    printf 'fake packer image\n' > "${output_directory}/${output_image_name}"
+    ;;
+  *)
+    exit 0
+    ;;
+esac
 SH
 
   cat > "${FAKE_BIN}/kubectl" <<'SH'
@@ -343,6 +456,7 @@ export TAILSCALE_SEARCH_DOMAIN="tail4d7760.ts.net"
 export NODE_NAME_SUFFIX=""
 export LONGHORN_DISK_SELECTOR='disk.dev_path == "/dev/vdb"'
 export LONGHORN_VOLUME_MAX_SIZE="16GiB"
+export HEADSCALE_BOOTSTRAP_MODE="disabled"
 
 scripts/prepare-image.sh
 assert_file "${TEST_STATE_DIR}/schematic.yaml"
@@ -353,6 +467,32 @@ assert_contains "${TEST_STATE_DIR}/schematic.yaml" "siderolabs/tailscale"
 assert_contains "${TEST_STATE_DIR}/schematic.yaml" "siderolabs/iscsi-tools"
 assert_contains "${TEST_STATE_DIR}/schematic.yaml" "siderolabs/util-linux-tools"
 assert_contains "${TEST_STATE_DIR}/schematic.id" "test-schematic"
+
+scripts/build-headscale-image.sh
+assert_file "${TEST_STATE_DIR}/assets/headscale/debian-12-genericcloud-amd64.qcow2"
+assert_file "${TEST_STATE_DIR}/assets/headscale/headscale_0.28.0_linux_amd64.deb"
+assert_file "${TEST_STATE_DIR}/headscale/packer/config.yaml"
+assert_file "${TEST_STATE_DIR}/headscale/packer/user-data"
+assert_file "${TEST_STATE_DIR}/headscale/packer/meta-data"
+assert_file "${TEST_STATE_DIR}/headscale/packer/id_ed25519"
+assert_file "${TEST_STATE_DIR}/headscale/packer/id_ed25519.pub"
+assert_file "${TEST_STATE_DIR}/headscale/headscale-base.qcow2"
+assert_contains "${TEST_STATE_DIR}/headscale/packer/config.yaml" "server_url: http://headscale.example.internal:8080"
+assert_contains "${TEST_STATE_DIR}/headscale/packer/config.yaml" "listen_addr: 0.0.0.0:8080"
+assert_contains "${TEST_STATE_DIR}/headscale/packer/config.yaml" "v4: 100.64.0.0/10"
+assert_contains "${TEST_STATE_DIR}/headscale/packer/config.yaml" "v6: fd7a:115c:a1e0::/48"
+assert_contains "${TEST_STATE_DIR}/headscale/packer/user-data" "name: packer"
+assert_contains "${TEST_STATE_DIR}/headscale/packer/user-data" "ssh-ed25519 fake-public-key"
+assert_contains "${TEST_STATE_DIR}/headscale/packer/meta-data" "instance-id: headscale-image"
+assert_log_contains "ssh-keygen -q -t ed25519 -N  -f ${TEST_STATE_DIR}/headscale/packer/id_ed25519"
+assert_log_contains "packer init ${ROOT_DIR}/packer/headscale.pkr.hcl"
+assert_log_contains "packer build -var base_image_path=${TEST_STATE_DIR}/assets/headscale/debian-12-genericcloud-amd64.qcow2"
+assert_log_contains "-var headscale_deb_path=${TEST_STATE_DIR}/assets/headscale/headscale_0.28.0_linux_amd64.deb"
+assert_log_contains "-var headscale_config_path=${TEST_STATE_DIR}/headscale/packer/config.yaml"
+assert_log_contains "-var user_data_path=${TEST_STATE_DIR}/headscale/packer/user-data"
+assert_log_contains "-var meta_data_path=${TEST_STATE_DIR}/headscale/packer/meta-data"
+assert_log_contains "-var output_directory=${TEST_STATE_DIR}/headscale/packer/output"
+assert_log_contains "-var output_image_name=headscale-base.qcow2"
 
 TS_AUTHKEY=tskey-auth-test scripts/generate-configs.sh
 for node in talos-ts-cp1 talos-ts-cp2 talos-ts-cp3 talos-ts-worker1 talos-ts-worker2 talos-ts-worker3; do
@@ -449,6 +589,19 @@ assert_log_contains "-display vnc=127.0.0.1:4"
 assert_log_contains "-display vnc=127.0.0.1:5"
 assert_log_contains "-display vnc=127.0.0.1:6"
 assert_log_contains "-device VGA"
+assert_not_file "${TEST_STATE_DIR}/headscale.pid"
+
+printf 'fake headscale base\n' > "${TMP_DIR}/headscale-base.qcow2"
+HEADSCALE_BOOTSTRAP_MODE=local-vm HEADSCALE_VM_IMAGE="${TMP_DIR}/headscale-base.qcow2" VM_DISPLAY_BACKEND=vnc VM_DISPLAY_DEVICE=VGA VM_DISPLAY_WIDTH= VM_DISPLAY_HEIGHT= scripts/start-vms.sh
+assert_file "${TEST_STATE_DIR}/headscale.pid"
+assert_file "${TEST_STATE_DIR}/disks/headscale.qcow2"
+assert_log_contains "hostfwd=tcp:127.0.0.1:18080-:8080"
+assert_log_contains "hostfwd=tcp:127.0.0.1:10022-:22"
+assert_log_contains "file=${TEST_STATE_DIR}/disks/headscale.qcow2,format=qcow2,if=virtio"
+assert_log_contains "-display none"
+assert_log_contains "-name headscale"
+
+HEADSCALE_BOOTSTRAP_MODE=local-vm HEADSCALE_READY_PROBE=pidfile scripts/wait-headscale.sh
 
 restart_pid_before="$(<"${TEST_STATE_DIR}/talos-ts-worker1.pid")"
 NODE=talos-ts-worker1 VM_DISPLAY_BACKEND=vnc VM_DISPLAY_DEVICE=VGA VM_DISPLAY_WIDTH= VM_DISPLAY_HEIGHT= scripts/restart-node.sh
@@ -506,10 +659,12 @@ WAIT_TALOS_PROBE=version scripts/bootstrap-from-scratch.sh
 assert_log_contains "apply-config --insecure --nodes 127.0.0.1:50001"
 
 printf '%s\n' '-oldsuffix' > "${SUFFIX_STATE_DIR}/node-name-suffix"
-WAIT_TALOS_PROBE=version NODE_NAME_SUFFIX=random STATE_DIR="${SUFFIX_STATE_DIR}" scripts/bootstrap-from-scratch.sh
+printf 'fake headscale base\n' > "${TMP_DIR}/headscale-base-suffix.qcow2"
+HEADSCALE_BOOTSTRAP_MODE=local-vm HEADSCALE_READY_PROBE=pidfile HEADSCALE_VM_IMAGE="${TMP_DIR}/headscale-base-suffix.qcow2" WAIT_TALOS_PROBE=version NODE_NAME_SUFFIX=random STATE_DIR="${SUFFIX_STATE_DIR}" scripts/bootstrap-from-scratch.sh
 new_suffix="$(<"${SUFFIX_STATE_DIR}/node-name-suffix")"
 [[ "${new_suffix}" != "-oldsuffix" ]] || fail "expected bootstrap-from-scratch to refresh the random node suffix"
 assert_file "${SUFFIX_STATE_DIR}/talos/generated/talos-ts-cp1${new_suffix}.yaml"
+assert_file "${SUFFIX_STATE_DIR}/disks/headscale.qcow2"
 assert_log_contains "talosctl gen config talos-tailnet-local https://talos-ts-cp1${new_suffix}:6443 --output ${SUFFIX_STATE_DIR}/talos/base"
 assert_log_not_contains "talosctl gen config talos-tailnet-local https://talos-ts-cp1-oldsuffix:6443 --output ${SUFFIX_STATE_DIR}/talos/base"
 
@@ -681,6 +836,12 @@ assert_contains "${TMP_DIR}/make-restart-node.txt" "NODE=\"talos-ts-worker1\" sc
 
 make -n bootstrap-from-scratch > "${TMP_DIR}/make-bootstrap-from-scratch.txt"
 assert_contains "${TMP_DIR}/make-bootstrap-from-scratch.txt" "scripts/bootstrap-from-scratch.sh"
+
+make -n headscale-wait > "${TMP_DIR}/make-headscale-wait.txt"
+assert_contains "${TMP_DIR}/make-headscale-wait.txt" "scripts/wait-headscale.sh"
+
+make -n headscale-image > "${TMP_DIR}/make-headscale-image.txt"
+assert_contains "${TMP_DIR}/make-headscale-image.txt" "scripts/build-headscale-image.sh"
 
 make -n secrets-validate > "${TMP_DIR}/make-secrets-validate.txt"
 assert_contains "${TMP_DIR}/make-secrets-validate.txt" "scripts/validate-gitops-secrets.sh"

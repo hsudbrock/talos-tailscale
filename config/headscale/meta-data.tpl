@@ -1,0 +1,2 @@
+instance-id: __HEADSCALE_IMAGE_INSTANCE_ID__
+local-hostname: __HEADSCALE_IMAGE_HOSTNAME__

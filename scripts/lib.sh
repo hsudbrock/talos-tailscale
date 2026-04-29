@@ -154,6 +154,33 @@ load_env() {
   : "${LONGHORN_VOLUME_NAME:=longhorn}"
   : "${LONGHORN_DISK_SELECTOR:=disk.dev_path == \"/dev/vdb\"}"
   : "${LONGHORN_VOLUME_MAX_SIZE:=16GiB}"
+  : "${HEADSCALE_BOOTSTRAP_MODE:=disabled}"
+  : "${HEADSCALE_VM_NAME:=headscale}"
+  : "${HEADSCALE_VM_IMAGE:=}"
+  : "${HEADSCALE_VM_DISK:=}"
+  : "${HEADSCALE_VM_MEMORY_MIB:=2048}"
+  : "${HEADSCALE_VM_CPUS:=2}"
+  : "${HEADSCALE_VM_CPU_MODEL:=${VM_CPU_MODEL}}"
+  : "${HEADSCALE_HOST_HTTP_PORT:=18080}"
+  : "${HEADSCALE_GUEST_HTTP_PORT:=8080}"
+  : "${HEADSCALE_HOST_SSH_PORT:=10022}"
+  : "${HEADSCALE_GUEST_SSH_PORT:=22}"
+  : "${HEADSCALE_READY_TIMEOUT_SECONDS:=180}"
+  : "${HEADSCALE_READY_INTERVAL_SECONDS:=2}"
+  : "${HEADSCALE_VERSION:=0.28.0}"
+  : "${HEADSCALE_ARCH:=amd64}"
+  : "${HEADSCALE_BASE_IMAGE_URL:=https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2}"
+  : "${HEADSCALE_DEB_URL:=https://github.com/juanfont/headscale/releases/download/v${HEADSCALE_VERSION}/headscale_${HEADSCALE_VERSION}_linux_${HEADSCALE_ARCH}.deb}"
+  : "${HEADSCALE_SERVER_URL:=http://headscale.example.internal:8080}"
+  : "${HEADSCALE_LISTEN_ADDR:=0.0.0.0:8080}"
+  : "${HEADSCALE_METRICS_LISTEN_ADDR:=127.0.0.1:9090}"
+  : "${HEADSCALE_GRPC_LISTEN_ADDR:=127.0.0.1:50443}"
+  : "${HEADSCALE_PREFIX_V4:=100.64.0.0/10}"
+  : "${HEADSCALE_PREFIX_V6:=fd7a:115c:a1e0::/48}"
+  : "${HEADSCALE_BASE_DOMAIN:=headscale.invalid}"
+  : "${HEADSCALE_PACKER_SSH_USERNAME:=packer}"
+  : "${HEADSCALE_IMAGE_HOSTNAME:=headscale-image}"
+  : "${HEADSCALE_IMAGE_INSTANCE_ID:=headscale-image}"
   if [[ -z "${ARGOCD_REPO_URL+x}" ]]; then
     ARGOCD_REPO_URL="$(git -C "${ROOT_DIR}" config --get remote.origin.url 2>/dev/null || true)"
     if [[ "${ARGOCD_REPO_URL}" =~ ^git@github.com:(.+)$ ]]; then
@@ -164,6 +191,28 @@ load_env() {
   read -r -a CONTROL_PLANE_NODES <<< "${CONTROL_PLANE_NODE_NAMES}"
   read -r -a WORKER_NODES <<< "${WORKER_NODE_NAMES}"
   read -r -a NODES <<< "${NODE_NAMES}"
+
+  if [[ -z "${HEADSCALE_VM_DISK}" ]]; then
+    HEADSCALE_VM_DISK="$(state_path "disks/${HEADSCALE_VM_NAME}.qcow2")"
+  fi
+  export HEADSCALE_VM_DISK
+
+  if [[ -z "${HEADSCALE_IMAGE_OUTPUT+x}" ]]; then
+    HEADSCALE_IMAGE_OUTPUT="$(state_path headscale/headscale-base.qcow2)"
+  fi
+  export HEADSCALE_IMAGE_OUTPUT
+
+  if [[ -z "${HEADSCALE_URL+x}" || -z "${HEADSCALE_URL}" ]]; then
+    case "${HEADSCALE_BOOTSTRAP_MODE}" in
+      local-vm)
+        HEADSCALE_URL="http://10.0.2.2:${HEADSCALE_HOST_HTTP_PORT}"
+        ;;
+      *)
+        HEADSCALE_URL=""
+        ;;
+    esac
+  fi
+  export HEADSCALE_URL
 }
 
 require_cmd() {
@@ -221,6 +270,14 @@ ensure_state_dir() {
 
 log() {
   printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"
+}
+
+headscale_local_vm_enabled() {
+  [[ "${HEADSCALE_BOOTSTRAP_MODE}" == "local-vm" ]]
+}
+
+headscale_support_enabled() {
+  [[ "${HEADSCALE_BOOTSTRAP_MODE}" == "local-vm" || "${HEADSCALE_BOOTSTRAP_MODE}" == "external" ]]
 }
 
 require_node() {
@@ -335,6 +392,67 @@ start_vm() {
   "${qemu_cmd[@]}" 2>"${qemu_log_file}"
 }
 
+ensure_headscale_vm_disk() {
+  if [[ -f "${HEADSCALE_VM_DISK}" ]]; then
+    return 0
+  fi
+
+  if [[ -z "${HEADSCALE_VM_IMAGE}" ]]; then
+    echo "missing ${HEADSCALE_VM_DISK}; set HEADSCALE_VM_IMAGE to a prepared Headscale base qcow2 image or point HEADSCALE_VM_DISK at an existing writable image" >&2
+    exit 1
+  fi
+
+  if [[ ! -f "${HEADSCALE_VM_IMAGE}" ]]; then
+    echo "missing HEADSCALE_VM_IMAGE=${HEADSCALE_VM_IMAGE}" >&2
+    exit 1
+  fi
+
+  mkdir -p "$(dirname "${HEADSCALE_VM_DISK}")"
+  qemu-img create -f qcow2 -F qcow2 -b "${HEADSCALE_VM_IMAGE}" "${HEADSCALE_VM_DISK}" >/dev/null
+}
+
+start_headscale_vm() {
+  local pidfile log_file qemu_log_file
+  local qemu_cmd
+
+  headscale_local_vm_enabled || return 0
+
+  ensure_state_dir
+  require_cmd qemu-system-x86_64
+  require_cmd qemu-img
+
+  pidfile="$(state_path "${HEADSCALE_VM_NAME}.pid")"
+  log_file="$(state_path "logs/${HEADSCALE_VM_NAME}.log")"
+  qemu_log_file="$(state_path "logs/${HEADSCALE_VM_NAME}.qemu.log")"
+
+  if [[ -f "${pidfile}" ]] && kill -0 "$(<"${pidfile}")" 2>/dev/null; then
+    log "${HEADSCALE_VM_NAME} already running with pid $(<"${pidfile}")"
+    return 0
+  elif [[ -f "${pidfile}" ]]; then
+    rm -f "${pidfile}"
+  fi
+
+  ensure_headscale_vm_disk
+
+  log "Starting ${HEADSCALE_VM_NAME}; Headscale host forward localhost:${HEADSCALE_HOST_HTTP_PORT}, SSH localhost:${HEADSCALE_HOST_SSH_PORT}"
+  qemu_cmd=(
+    qemu-system-x86_64
+    -name "${HEADSCALE_VM_NAME}" \
+    -machine accel=kvm:tcg \
+    -cpu "${HEADSCALE_VM_CPU_MODEL}" \
+    -smp "${HEADSCALE_VM_CPUS}" \
+    -m "${HEADSCALE_VM_MEMORY_MIB}" \
+    -drive "file=${HEADSCALE_VM_DISK},format=qcow2,if=virtio" \
+    -netdev "user,id=${HEADSCALE_VM_NAME},hostname=${HEADSCALE_VM_NAME},hostfwd=tcp:127.0.0.1:${HEADSCALE_HOST_HTTP_PORT}-:${HEADSCALE_GUEST_HTTP_PORT},hostfwd=tcp:127.0.0.1:${HEADSCALE_HOST_SSH_PORT}-:${HEADSCALE_GUEST_SSH_PORT}" \
+    -device "virtio-net-pci,netdev=${HEADSCALE_VM_NAME}" \
+    -display none \
+    -serial "file:${log_file}" \
+    -daemonize -pidfile "${pidfile}"
+  )
+
+  "${qemu_cmd[@]}" 2>"${qemu_log_file}"
+}
+
 stop_vm() {
   local node="$1"
   local pidfile pid
@@ -350,6 +468,25 @@ stop_vm() {
   pid="$(<"${pidfile}")"
   if kill -0 "${pid}" 2>/dev/null; then
     log "Stopping ${node} pid ${pid}"
+    kill "${pid}"
+  fi
+  rm -f "${pidfile}"
+}
+
+stop_headscale_vm() {
+  local pidfile pid
+
+  headscale_local_vm_enabled || return 0
+
+  pidfile="$(state_path "${HEADSCALE_VM_NAME}.pid")"
+  if [[ ! -f "${pidfile}" ]]; then
+    log "${HEADSCALE_VM_NAME} is not running"
+    return 0
+  fi
+
+  pid="$(<"${pidfile}")"
+  if kill -0 "${pid}" 2>/dev/null; then
+    log "Stopping ${HEADSCALE_VM_NAME} pid ${pid}"
     kill "${pid}"
   fi
   rm -f "${pidfile}"

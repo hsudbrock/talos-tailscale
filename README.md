@@ -20,6 +20,7 @@ IPs and etcd advertised addresses prefer the Tailscale CGNAT range
 - First-boot access: localhost Talos API forwards only
 - Steady-state access: Tailscale MagicDNS hostnames
 - VM screens: localhost-only VNC displays
+- Optional Headscale lab mode: separate support VM with host-forwarded control endpoint
 
 ## Prerequisites
 
@@ -37,6 +38,14 @@ IPs and etcd advertised addresses prefer the Tailscale CGNAT range
 
 The auth key is read from `TS_AUTHKEY` in the environment or from `.env`.
 Do not commit `.env`.
+
+## Headscale migration note
+
+The local Headscale VM support in this repo is intended as an intermediate test
+environment. Shape your config so the Talos nodes ultimately depend on an
+explicit `HEADSCALE_URL`, not on the fact that Headscale happens to be running
+on the same workstation today. That way the later move to a remote VM in
+Hetzner, AWS, Azure, or elsewhere is mostly a configuration change.
 
 ## Create a Tailscale auth key
 
@@ -81,6 +90,18 @@ Set `TS_AUTHKEY` to a valid auth key. The remaining defaults create a
 3-control-plane plus 3-worker local test cluster. Set `ARGOCD_REPO_URL` to a Git
 remote that the cluster can reach if you plan to run `make argocd`.
 
+If you are preparing for the Headscale migration, also choose a bootstrap mode:
+
+```bash
+HEADSCALE_BOOTSTRAP_MODE=local-vm
+```
+
+The supported values are:
+
+- `disabled`: continue using the hosted control plane only
+- `local-vm`: start a local Headscale support VM for testing
+- `external`: do not start a local VM; point `HEADSCALE_URL` at a remote service
+
 Older `.env` files may still have only `NODE_NAMES`. That continues to work as
 an all-control-plane topology. To add workers, replace it with:
 
@@ -110,6 +131,78 @@ Longhorn-required `iscsi-tools` and `util-linux-tools` extensions:
 
 ```bash
 make image
+```
+
+## Optional local Headscale VM
+
+For the local test path, this repo manages Headscale as a separate support VM,
+not as a Talos node. The current implementation focuses on repeatable lifecycle,
+state persistence, and endpoint reachability. It does not assume Headscale must
+remain local forever.
+
+Recommended guest preparation:
+
+- Debian 12 cloud image in qcow2 format
+- Headscale installed from the official Debian package
+- Headscale configured to listen on the guest port from `.env`
+- Guest image prepared so the service starts automatically under systemd
+
+Build the reusable base image with:
+
+```bash
+make headscale-image
+```
+
+This workflow requires `packer`, `qemu-system-x86_64`, `qemu-img`, `ssh-keygen`,
+and `curl` on the host. Packer uses the QEMU builder plus a NoCloud-style
+cloud-init seed to boot the official Debian 12 cloud image once, install the
+official Headscale Debian package, write `/etc/headscale/config.yaml`, and shut
+the guest down as a reusable qcow2 artifact at
+`.state/headscale/headscale-base.qcow2` unless you override
+`HEADSCALE_IMAGE_OUTPUT`.
+
+Packer will also initialize the QEMU plugin the first time it runs. That makes
+this local workflow slightly heavier than a one-off script, but it gives the
+repo an image pipeline shape that can be reused later for Hetzner-oriented
+builds instead of having a local-only customization path.
+
+Set these values in `.env` for local-vm mode:
+
+```bash
+HEADSCALE_BOOTSTRAP_MODE=local-vm
+HEADSCALE_VM_IMAGE=.state/headscale/headscale-base.qcow2
+HEADSCALE_HOST_HTTP_PORT=18080
+HEADSCALE_GUEST_HTTP_PORT=8080
+HEADSCALE_HOST_SSH_PORT=10022
+HEADSCALE_GUEST_SSH_PORT=22
+```
+
+The repo will create a persistent overlay disk at `.state/disks/headscale.qcow2`
+the first time it starts the VM. `make bootstrap-from-scratch` rebuilds Talos
+node disks only; it intentionally preserves the Headscale disk so control-plane
+state survives ordinary Talos rebuilds. Use `make clean` or `make clean-disks`
+when you explicitly want to wipe local VM state.
+
+When `HEADSCALE_BOOTSTRAP_MODE=local-vm`, the default client-facing
+`HEADSCALE_URL` becomes:
+
+```bash
+http://10.0.2.2:18080
+```
+
+That address is for Talos guests, not for the host shell. It uses QEMU slirp's
+guest-visible host gateway plus the forwarded Headscale port. The host-side
+reachability check runs against `127.0.0.1:${HEADSCALE_HOST_HTTP_PORT}` via:
+
+```bash
+make headscale-wait
+```
+
+If you already have a remote Headscale deployment, skip the local VM entirely:
+
+```bash
+HEADSCALE_BOOTSTRAP_MODE=external
+HEADSCALE_URL=https://headscale.example.com
 ```
 
 Generate Talos machine configs:

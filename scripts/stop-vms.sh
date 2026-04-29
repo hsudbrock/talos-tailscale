@@ -7,3 +7,5 @@ load_env
 for node in "${NODES[@]}"; do
   stop_vm "${node}"
 done
+
+stop_headscale_vm
