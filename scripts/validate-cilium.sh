@@ -69,11 +69,13 @@ metadata:
   name: echo
   namespace: policy-smoke
 spec:
+  type: NodePort
   selector:
     app: echo
   ports:
     - port: 80
       targetPort: 5678
+      nodePort: 30080
 ---
 apiVersion: v1
 kind: Pod
@@ -179,13 +181,27 @@ if [[ "${allowed_output}" != "policy ok" ]]; then
   exit 1
 fi
 
+node_name="$(kubectl get pod allowed-client -n policy-smoke -o jsonpath='{.spec.nodeName}')"
+node_ip="$(kubectl get node "${node_name}" -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')"
+if [[ -z "${node_ip}" ]]; then
+  echo "could not determine InternalIP for node ${node_name}" >&2
+  exit 1
+fi
+
+log "Validating NodePort service handling"
+nodeport_output="$(kubectl exec -n policy-smoke allowed-client -- curl -fsS --max-time 10 "http://${node_ip}:30080/")"
+printf '%s\n' "${nodeport_output}"
+if [[ "${nodeport_output}" != "policy ok" ]]; then
+  echo "unexpected NodePort response: ${nodeport_output}" >&2
+  exit 1
+fi
+
 log "Validating denied traffic"
 if kubectl exec -n policy-smoke denied-client -- curl -fsS --max-time 10 http://echo.policy-smoke.svc.cluster.local/ >/dev/null 2>&1; then
   echo "denied client unexpectedly reached the echo service" >&2
   exit 1
 fi
 
-node_name="$(kubectl get pod allowed-client -n policy-smoke -o jsonpath='{.spec.nodeName}')"
 cilium_pod="$(kubectl -n kube-system get pods -l k8s-app=cilium -o wide --no-headers | awk -v node="${node_name}" '$7 == node { print $1; exit }')"
 if [[ -z "${cilium_pod}" ]]; then
   echo "could not find cilium pod on node ${node_name}" >&2

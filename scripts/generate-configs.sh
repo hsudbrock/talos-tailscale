@@ -41,11 +41,17 @@ SAN_ARGS+=(--additional-sans "localhost" --additional-sans "127.0.0.1")
 if [[ "${CLUSTER_CNI}" == "cilium" ]]; then
   cat > "${PATCH_COMMON}" <<YAML
 machine:
+  features:
+    kubePrism:
+      enabled: true
+      port: 7445
   kubelet:
     nodeIP:
       validSubnets:
         - ${TAILSCALE_CIDR}
 cluster:
+  proxy:
+    disabled: true
   network:
     cni:
       name: none

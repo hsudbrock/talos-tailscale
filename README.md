@@ -584,21 +584,27 @@ cluster:
 By default this repo bootstraps Cilium instead of Talos-managed flannel. The
 generated control-plane machine configs embed a rendered Cilium manifest as a
 Talos `inlineManifest`, which lets cluster networking come up before Argo CD is
-available. The rendered Cilium configuration keeps `kube-proxy`, uses tunnel
-mode with VXLAN, and enables Hubble Relay/UI for flow inspection.
+available. The rendered Cilium configuration runs in kube-proxy-free mode, uses
+tunnel mode with VXLAN, and enables Hubble Relay/UI for flow inspection.
 
 The pinned Cilium bootstrap version comes from `CILIUM_VERSION` in `.env`
 (default `1.19.3`) and is rendered on demand by `scripts/render-cilium-manifest.sh`.
-The chosen first-pass mode is deliberately conservative for this topology:
+The chosen mode for this topology is:
 
 - Talos disables its built-in CNI by setting `cluster.network.cni.name: none`
+- Talos explicitly enables `KubePrism` on `localhost:7445`
+- Talos disables bootstrap deployment of `kube-proxy`
 - Cilium runs as the primary CNI from bootstrap
 - Routing stays in VXLAN tunnel mode instead of native routing
-- `kube-proxy` remains enabled instead of switching to eBPF kube-proxy replacement
+- Cilium runs with eBPF kube-proxy replacement enabled
+- Cilium points its Kubernetes API client at `localhost:7445` via KubePrism
 - Hubble Relay and Hubble UI are enabled for flow visibility
 
-That combination avoids taking on native-routing and kube-proxy replacement
-debugging at the same time as the initial flannel-to-Cilium migration.
+KubePrism is required for the kube-proxy-free path on Talos. During early
+bootstrap, Cilium cannot safely depend on `kubernetes.default.svc` because
+Service handling is exactly what Cilium is bringing up. KubePrism gives every
+node a host-networked, per-node API endpoint on `localhost:7445`, which is what
+Talos and Cilium both recommend for kube-proxy-free Cilium on Talos.
 
 If you need to fall back to the old flannel path while debugging, set
 `CLUSTER_CNI=flannel` in `.env`, regenerate configs, and re-apply or rebuild
@@ -647,6 +653,7 @@ The validation covers:
   reachability check using a temporary PodSecurity-compliant curl pod
 - A standard Kubernetes `NetworkPolicy` smoke test with one allowed and one
   denied client path
+- NodePort service handling through a node `InternalIP`
 - Hubble flow output that shows forwarded DNS/HTTP traffic and dropped
   policy-denied TCP traffic
 
@@ -681,7 +688,7 @@ Then browse to `http://localhost:12000`.
 Known acceptable transient messages:
 
 - During early bootstrap, Kubernetes nodes may be `NotReady` for a short time
-  while Cilium and kube-proxy come up.
+  while Cilium comes up and establishes service handling.
 
 Known avoidable log noise:
 

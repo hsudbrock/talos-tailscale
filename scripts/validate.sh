@@ -74,9 +74,16 @@ spec:
     - name: curl
       image: curlimages/curl:8.11.1
       command:
-        - curl
-        - -fsS
-        - http://tailnet-smoke.default.svc.cluster.local/
+        - /bin/sh
+        - -ec
+        - |
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://tailnet-smoke.default.svc.cluster.local/; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
       securityContext:
         allowPrivilegeEscalation: false
         capabilities:

@@ -15,7 +15,9 @@ mkdir -p "${OUT_DIR}"
 cat > "${VALUES_FILE}" <<YAML
 ipam:
   mode: kubernetes
-kubeProxyReplacement: false
+kubeProxyReplacement: true
+k8sServiceHost: localhost
+k8sServicePort: 7445
 routingMode: tunnel
 tunnelProtocol: vxlan
 cgroup:
