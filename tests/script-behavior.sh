@@ -197,7 +197,15 @@ case "${cmd}" in
 [
   {
     "id": 1,
+    "name": "headscale-talos"
+  },
+  {
+    "id": 2,
     "name": "headscale-test"
+  },
+  {
+    "id": 3,
+    "name": "headscale-host"
   }
 ]
 EOF
@@ -336,6 +344,13 @@ set -euo pipefail
 printf 'k9s KUBECONFIG=%q args=%q\n' "${KUBECONFIG:-}" "$*" >> "${CALL_LOG}"
 SH
 
+  cat > "${FAKE_BIN}/sudo" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'sudo %q\n' "$*" >> "${CALL_LOG}"
+"$@"
+SH
+
   cat > "${FAKE_BIN}/tailscaled" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -407,8 +422,10 @@ case "${cmd}" in
           ;;
       esac
     done
-    [[ -n "${socket}" && -n "${hostname}" ]]
-    printf '%s\n' "${hostname}" > "${socket}.hostname"
+    if [[ -n "${socket}" ]]; then
+      [[ -n "${hostname}" ]]
+      printf '%s\n' "${hostname}" > "${socket}.hostname"
+    fi
     ;;
   ip)
     hostname="$(<"${socket}.hostname")"
@@ -628,6 +645,7 @@ for node in talos-ts-cp1 talos-ts-cp2 talos-ts-cp3 talos-ts-worker1 talos-ts-wor
   assert_contains "${config}" "TS_AUTHKEY=tskey-auth-test"
   assert_contains "${config}" "TS_HOSTNAME=${node}"
   assert_contains "${config}" "TS_ACCEPT_DNS=false"
+  assert_contains "${config}" "TS_EXTRA_ARGS=--reset"
   assert_contains "${config}" "hostname: ${node}"
   assert_not_contains "${config}" "    hostname: ${node}"
   assert_not_contains "${config}" "auto: stable"
@@ -690,6 +708,31 @@ assert_log_contains "gen config talos-tailnet-local https://talos-ts-cp1${suffix
 NODE_NAME_SUFFIX=random STATE_DIR="${SUFFIX_STATE_DIR}" TS_AUTHKEY=tskey-auth-test scripts/generate-configs.sh
 assert_contains "${SUFFIX_STATE_DIR}/node-name-suffix" "${suffix}"
 
+printf 'fake headscale base\n' > "${TMP_DIR}/headscale-base.qcow2"
+HEADSCALE_BOOTSTRAP_MODE=local-vm HEADSCALE_VM_IMAGE="${TMP_DIR}/headscale-base.qcow2" HEADSCALE_READY_PROBE=pidfile scripts/generate-configs.sh
+for node in talos-ts-cp1 talos-ts-cp2 talos-ts-cp3 talos-ts-worker1 talos-ts-worker2 talos-ts-worker3; do
+  config="${TEST_STATE_DIR}/talos/generated/${node}.yaml"
+  assert_contains "${config}" "TS_AUTHKEY=tskey-headscale-test"
+  assert_contains "${config}" "TS_EXTRA_ARGS=--login-server=http://10.0.2.2:18080 --reset"
+done
+assert_file "${TEST_STATE_DIR}/headscale/talos-authkey"
+assert_contains "${TEST_STATE_DIR}/headscale/talos-authkey" "tskey-headscale-test"
+assert_log_contains "sudo headscale users create headscale-talos --force"
+assert_log_contains "sudo headscale users list -o json"
+assert_log_contains "sudo headscale preauthkeys create --user 1 --reusable --expiration 720h --tags tag:talos-lab"
+rm -f "${TEST_STATE_DIR}/headscale.pid"
+export HEADSCALE_BOOTSTRAP_MODE="disabled"
+unset HEADSCALE_VM_IMAGE
+
+HEADSCALE_BOOTSTRAP_MODE=local-vm HEADSCALE_VM_IMAGE="${TMP_DIR}/headscale-base.qcow2" HEADSCALE_READY_PROBE=pidfile scripts/connect-headscale-host.sh
+assert_file "${TEST_STATE_DIR}/headscale/host-authkey"
+assert_contains "${TEST_STATE_DIR}/headscale/host-authkey" "tskey-headscale-test"
+assert_log_contains "sudo tailscale up --login-server http://127.0.0.1:18080 --auth-key tskey-headscale-test --accept-dns=true --reset"
+assert_log_contains "sudo headscale users create headscale-host --force"
+assert_log_contains "sudo headscale preauthkeys create --user 3 --reusable --expiration 720h"
+assert_log_not_contains "sudo headscale preauthkeys create --user 3 --reusable --expiration 720h --tags"
+rm -f "${TEST_STATE_DIR}/headscale.pid"
+
 VM_DISPLAY_BACKEND=vnc VM_DISPLAY_DEVICE=VGA VM_DISPLAY_WIDTH= VM_DISPLAY_HEIGHT= scripts/start-vms.sh
 for node in talos-ts-cp1 talos-ts-cp2 talos-ts-cp3 talos-ts-worker1 talos-ts-worker2 talos-ts-worker3; do
   assert_file "${TEST_STATE_DIR}/disks/${node}.qcow2"
@@ -741,7 +784,7 @@ HEADSCALE_BOOTSTRAP_MODE=local-vm HEADSCALE_READY_PROBE=pidfile scripts/validate
 assert_log_contains "ssh -i ${TEST_STATE_DIR}/headscale/packer/id_ed25519"
 assert_log_contains "sudo headscale users create headscale-test --force"
 assert_log_contains "sudo headscale users list -o json"
-assert_log_contains "sudo headscale preauthkeys create --user 1 --reusable --expiration 24h --tags tag:talos-lab"
+assert_log_contains "sudo headscale preauthkeys create --user 2 --reusable --expiration 24h --tags tag:talos-lab"
 assert_log_contains "tailscale --socket ${TEST_STATE_DIR}/headscale/validate-clients/headscale-test-client1.sock up --login-server http://127.0.0.1:18080 --auth-key tskey-headscale-test --hostname headscale-test-client1 --accept-dns=false --reset"
 assert_log_contains "tailscale --socket ${TEST_STATE_DIR}/headscale/validate-clients/headscale-test-client2.sock up --login-server http://127.0.0.1:18080 --auth-key tskey-headscale-test --hostname headscale-test-client2 --accept-dns=false --reset"
 assert_log_contains "tailscale --socket ${TEST_STATE_DIR}/headscale/validate-clients/headscale-test-client1.sock ping 100.64.0.12"
@@ -803,6 +846,8 @@ assert_log_contains "apply-config --insecure --nodes 127.0.0.1:50001"
 
 printf '%s\n' '-oldsuffix' > "${SUFFIX_STATE_DIR}/node-name-suffix"
 printf 'fake headscale base\n' > "${TMP_DIR}/headscale-base-suffix.qcow2"
+mkdir -p "${SUFFIX_STATE_DIR}/headscale/packer"
+printf 'fake-private-key\n' > "${SUFFIX_STATE_DIR}/headscale/packer/id_ed25519"
 HEADSCALE_BOOTSTRAP_MODE=local-vm HEADSCALE_READY_PROBE=pidfile HEADSCALE_VM_IMAGE="${TMP_DIR}/headscale-base-suffix.qcow2" WAIT_TALOS_PROBE=version NODE_NAME_SUFFIX=random STATE_DIR="${SUFFIX_STATE_DIR}" scripts/bootstrap-from-scratch.sh
 new_suffix="$(<"${SUFFIX_STATE_DIR}/node-name-suffix")"
 [[ "${new_suffix}" != "-oldsuffix" ]] || fail "expected bootstrap-from-scratch to refresh the random node suffix"
@@ -991,6 +1036,9 @@ assert_contains "${TMP_DIR}/make-headscale-image.txt" "scripts/build-headscale-i
 
 make -n headscale-client-validate > "${TMP_DIR}/make-headscale-client-validate.txt"
 assert_contains "${TMP_DIR}/make-headscale-client-validate.txt" "scripts/validate-headscale-clients.sh"
+
+make -n headscale-host-connect > "${TMP_DIR}/make-headscale-host-connect.txt"
+assert_contains "${TMP_DIR}/make-headscale-host-connect.txt" "scripts/connect-headscale-host.sh"
 
 make -n secrets-validate > "${TMP_DIR}/make-secrets-validate.txt"
 assert_contains "${TMP_DIR}/make-secrets-validate.txt" "scripts/validate-gitops-secrets.sh"

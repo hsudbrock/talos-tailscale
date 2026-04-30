@@ -13,7 +13,7 @@ derp:
   urls:
     - https://controlplane.tailscale.com/derpmap/default
 dns:
-  magic_dns: false
+  magic_dns: true
   override_local_dns: false
   base_domain: __HEADSCALE_BASE_DOMAIN__
   nameservers:

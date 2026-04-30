@@ -37,6 +37,38 @@ apply_config_authenticated() {
     --file "${config}"
 }
 
+apply_config_authenticated_with_retry() {
+  local node="$1"
+  local config="$2"
+  local attempt authenticated_error_file authenticated_error
+
+  for attempt in $(seq 1 30); do
+    authenticated_error_file="$(mktemp)"
+    if apply_config_authenticated "${node}" "${config}" 2>"${authenticated_error_file}"; then
+      rm -f "${authenticated_error_file}"
+      return 0
+    fi
+
+    authenticated_error="$(<"${authenticated_error_file}")"
+    rm -f "${authenticated_error_file}"
+
+    if [[ "${authenticated_error}" != *"authentication handshake failed"* &&
+          "${authenticated_error}" != *"connection error"* &&
+          "${authenticated_error}" != *"code = Unavailable"* &&
+          "${authenticated_error}" != *"EOF"* ]]; then
+      printf '%s\n' "${authenticated_error}" >&2
+      return 1
+    fi
+
+    if [[ "${attempt}" == "30" ]]; then
+      printf '%s\n' "${authenticated_error}" >&2
+      return 1
+    fi
+
+    sleep 2
+  done
+}
+
 for node in "${NODES[@]}"; do
   idx="$(node_index "${node}")"
   config="$(state_path "talos/generated/${node}.yaml")"
@@ -67,5 +99,5 @@ for node in "${NODES[@]}"; do
   fi
 
   log "Retrying authenticated apply for ${node} via control-plane localhost:${AUTH_ENDPOINT_PORT}"
-  apply_config_authenticated "${node}" "${config}"
+  apply_config_authenticated_with_retry "${node}" "${config}"
 done

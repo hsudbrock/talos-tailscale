@@ -4,7 +4,7 @@ KUBECONFIG ?= $(STATE_DIR)/kubeconfig/config
 
 .DEFAULT_GOAL := help
 
-.PHONY: help env talos-image headscale-image configs start headscale-wait headscale-client-validate restart-node apply bootstrap bootstrap-from-scratch validate cilium-validate logs-audit argocd argocd-status argocd-sync argocd-ui argocd-password longhorn-status longhorn-sync longhorn-ui hubble-ui k9s stop clean clean-disks reset test test-local secrets-validate sealed-secrets-backup sealed-secrets-restore vnc-cp1 vnc-cp2 vnc-cp3 vnc-worker1 vnc-worker2 vnc-worker3 logs-tailscale logs-tailscale-cp1 logs-tailscale-cp2 logs-tailscale-cp3 logs-tailscale-worker1 logs-tailscale-worker2 logs-tailscale-worker3
+.PHONY: help env talos-image headscale-image configs start headscale-wait headscale-client-validate headscale-host-connect restart-node apply bootstrap bootstrap-from-scratch validate cilium-validate logs-audit argocd argocd-status argocd-sync argocd-ui argocd-password longhorn-status longhorn-sync longhorn-ui hubble-ui k9s stop clean clean-disks reset test test-local secrets-validate sealed-secrets-backup sealed-secrets-restore vnc-cp1 vnc-cp2 vnc-cp3 vnc-worker1 vnc-worker2 vnc-worker3 logs-tailscale logs-tailscale-cp1 logs-tailscale-cp2 logs-tailscale-cp3 logs-tailscale-worker1 logs-tailscale-worker2 logs-tailscale-worker3
 
 help:
 	@printf 'Talos over Tailscale local test targets:\n\n'
@@ -15,6 +15,7 @@ help:
 	@printf '  make start      Start the isolated QEMU VMs and optional local Headscale VM\n'
 	@printf '  make headscale-wait Wait for the configured Headscale endpoint to become reachable\n'
 	@printf '  make headscale-client-validate Validate the local Headscale VM with two non-Talos clients\n'
+	@printf '  make headscale-host-connect Connect this host to the Headscale network\n'
 	@printf '  make restart-node NODE=talos-ts-worker1 Restart a single VM by node name\n'
 	@printf '  make apply      Apply Talos machine configs through localhost forwards\n'
 	@printf '  make bootstrap  Bootstrap etcd/Kubernetes and fetch kubeconfig\n'
@@ -71,6 +72,9 @@ headscale-wait:
 
 headscale-client-validate:
 	scripts/validate-headscale-clients.sh
+
+headscale-host-connect:
+	scripts/connect-headscale-host.sh
 
 restart-node:
 	@[[ -n "$(NODE)" ]] || { echo "missing NODE; use make restart-node NODE=<node-name>" >&2; exit 1; }

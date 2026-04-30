@@ -34,11 +34,13 @@ IPs and etcd advertised addresses prefer the Tailscale CGNAT range
 - `ssh`, `tailscale`, and `tailscaled` for the optional `make headscale-client-validate` flow
 - `kubeseal` for creating GitOps-managed Sealed Secrets
 - `hubble` for optional local Hubble Relay queries
-- A Tailscale tailnet with MagicDNS enabled
-- A reusable or ephemeral Tailscale auth key
+- A Tailscale tailnet with MagicDNS enabled when using the hosted control plane
+- A reusable or ephemeral Tailscale auth key when `HEADSCALE_BOOTSTRAP_MODE=disabled`
 
-The auth key is read from `TS_AUTHKEY` in the environment or from `.env`.
-Do not commit `.env`.
+When `HEADSCALE_BOOTSTRAP_MODE=disabled`, the auth key is read from `TS_AUTHKEY`
+in the environment or from `.env`. In Headscale modes, the repo uses
+`HEADSCALE_AUTH_KEY` if you set it explicitly, or auto-generates a reusable
+local-vm key into `.state/headscale/talos-authkey`. Do not commit `.env`.
 
 ## Headscale migration note
 
@@ -87,9 +89,10 @@ make env
 $EDITOR .env
 ```
 
-Set `TS_AUTHKEY` to a valid auth key. The remaining defaults create a
-3-control-plane plus 3-worker local test cluster. Set `ARGOCD_REPO_URL` to a Git
-remote that the cluster can reach if you plan to run `make argocd`.
+Set `TS_AUTHKEY` to a valid auth key if `HEADSCALE_BOOTSTRAP_MODE=disabled`.
+The remaining defaults create a 3-control-plane plus 3-worker local test
+cluster. Set `ARGOCD_REPO_URL` to a Git remote that the cluster can reach if
+you plan to run `make argocd`.
 
 If you are preparing for the Headscale migration, also choose a bootstrap mode:
 
@@ -179,6 +182,10 @@ HEADSCALE_HOST_SSH_PORT=10022
 HEADSCALE_GUEST_SSH_PORT=22
 ```
 
+For Talos-node enrollment in Headscale mode, either set a reusable
+`HEADSCALE_AUTH_KEY` explicitly or let the repo create one automatically for
+the local-vm workflow under `.state/headscale/talos-authkey`.
+
 The repo will create a persistent overlay disk at `.state/disks/headscale.qcow2`
 the first time it starts the VM. `make bootstrap-from-scratch` rebuilds Talos
 node disks only; it intentionally preserves the Headscale disk so control-plane
@@ -236,6 +243,35 @@ Unlike Talos guests, the validation clients run on the host, so they should
 normally talk to Headscale via `http://127.0.0.1:${HEADSCALE_HOST_HTTP_PORT}`
 rather than the guest-facing `HEADSCALE_URL` value.
 
+To join the host itself to the Headscale tailnet, use:
+
+```bash
+make headscale-host-connect
+```
+
+This target ensures a separate `headscale-host` user exists in Headscale,
+creates a reusable host auth key, and runs `tailscale up` against
+`HEADSCALE_HOST_CONNECT_URL`. On a typical host this requires `sudo`; if your
+policy prompts for a password, run the target from an interactive shell and
+enter it there. Override `HEADSCALE_HOST_USER`, `HEADSCALE_HOST_TAG`,
+`HEADSCALE_HOST_KEY_EXPIRATION`, `HEADSCALE_HOST_ACCEPT_DNS`, or
+`HEADSCALE_HOST_AUTH_KEY` in `.env` if you need different host enrollment
+behavior.
+
+For host-side DNS resolution, the repo now defaults `HEADSCALE_BASE_DOMAIN` to
+`tailnet.home.arpa` and enables Headscale MagicDNS in the generated
+configuration. After changing the Headscale DNS settings, rebuild the Headscale
+image, recreate the Headscale VM overlay disk, restart the VM, and reconnect
+the host so the updated DNS config is advertised:
+
+```bash
+make stop
+rm -f .state/disks/headscale.qcow2
+make headscale-image
+make start
+make headscale-host-connect
+```
+
 If you already have a remote Headscale deployment, skip the local VM entirely:
 
 ```bash
@@ -248,6 +284,11 @@ Generate Talos machine configs:
 ```bash
 make configs
 ```
+
+In Headscale local-vm mode, `make configs` now waits for the Headscale VM,
+ensures a dedicated `headscale-talos` user exists, creates a reusable tagged
+preauth key, and injects both the key and `--login-server=${HEADSCALE_URL}` into
+the generated `ext-tailscale` `ExtensionServiceConfig`.
 
 The generated worker configs now prepare Longhorn's Talos data path at
 `/var/mnt/longhorn`. By default worker VMs also get a second virtio disk

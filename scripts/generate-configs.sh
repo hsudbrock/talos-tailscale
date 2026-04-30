@@ -5,7 +5,29 @@ source "$(dirname "$0")/lib.sh"
 load_env
 ensure_state_dir
 require_cmd talosctl
-require_env TS_AUTHKEY
+
+resolve_tailscale_authkey() {
+  case "${HEADSCALE_BOOTSTRAP_MODE}" in
+    disabled)
+      require_env TS_AUTHKEY
+      printf '%s\n' "${TS_AUTHKEY}"
+      ;;
+    local-vm|external)
+      require_env HEADSCALE_URL
+      "${ROOT_DIR}/scripts/ensure-headscale-auth-key.sh"
+      ;;
+    *)
+      echo "unsupported HEADSCALE_BOOTSTRAP_MODE=${HEADSCALE_BOOTSTRAP_MODE}" >&2
+      exit 1
+      ;;
+  esac
+}
+
+TAILSCALE_AUTHKEY="$(resolve_tailscale_authkey)"
+TAILSCALE_EXTRA_ARGS="--reset"
+if headscale_support_enabled; then
+  TAILSCALE_EXTRA_ARGS="--login-server=${HEADSCALE_URL} --reset"
+fi
 
 SCHEMATIC_ID_FILE="$(state_path schematic.id)"
 if [[ ! -f "${SCHEMATIC_ID_FILE}" ]]; then
@@ -213,11 +235,11 @@ apiVersion: v1alpha1
 kind: ExtensionServiceConfig
 name: tailscale
 environment:
-  - TS_AUTHKEY=${TS_AUTHKEY}
+  - TS_AUTHKEY=${TAILSCALE_AUTHKEY}
   - TS_HOSTNAME=${node}
   - TS_ACCEPT_DNS=${TAILSCALE_ACCEPT_DNS}
   - TS_STATE_DIR=/var/lib/tailscale
-  - TS_EXTRA_ARGS=--reset
+  - TS_EXTRA_ARGS=${TAILSCALE_EXTRA_ARGS}
 YAML
 
   talosctl machineconfig patch \
