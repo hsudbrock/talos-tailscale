@@ -31,6 +31,7 @@ IPs and etcd advertised addresses prefer the Tailscale CGNAT range
 - `helm` for rendering the pinned Cilium bootstrap manifest during `make configs`
 - `k9s` for the optional `make k9s` target
 - `curl`
+- `ssh`, `tailscale`, and `tailscaled` for the optional `make headscale-client-validate` flow
 - `kubeseal` for creating GitOps-managed Sealed Secrets
 - `hubble` for optional local Hubble Relay queries
 - A Tailscale tailnet with MagicDNS enabled
@@ -197,6 +198,21 @@ reachability check runs against `127.0.0.1:${HEADSCALE_HOST_HTTP_PORT}` via:
 ```bash
 make headscale-wait
 ```
+
+Before wiring Talos nodes to Headscale, validate the local control plane with
+two non-Talos userspace clients:
+
+```bash
+make headscale-client-validate
+```
+
+This flow connects to the local Headscale VM over the forwarded SSH port using
+the same `packer` key stored under `.state/headscale/packer/`, creates a
+reusable tagged preauth key, starts two isolated host-side `tailscaled`
+instances, and confirms that both clients appear in `headscale nodes list` and
+can `tailscale ping` each other. Override `HEADSCALE_VALIDATE_CLIENT_NAMES`,
+`HEADSCALE_VALIDATE_TAG`, or `HEADSCALE_VALIDATE_KEY_EXPIRATION` in `.env` if
+you need different validation names or tags.
 
 If you already have a remote Headscale deployment, skip the local VM entirely:
 

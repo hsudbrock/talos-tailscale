@@ -184,6 +184,27 @@ mkdir -p "$(dirname "${pidfile}")"
 printf '%s\n' "$$" > "${pidfile}"
 SH
 
+  cat > "${FAKE_BIN}/ssh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ssh %q\n' "$*" >> "${CALL_LOG}"
+cmd="${*: -1}"
+case "${cmd}" in
+  *"headscale preauthkeys create"*)
+    printf 'tskey-headscale-test\n'
+    ;;
+  *"headscale nodes list"*)
+    cat <<'EOF'
+ID | Hostname
+1  | headscale-test-client1
+2  | headscale-test-client2
+EOF
+    ;;
+  *)
+    ;;
+esac
+SH
+
   cat > "${FAKE_BIN}/ssh-keygen" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -301,6 +322,97 @@ SH
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'k9s KUBECONFIG=%q args=%q\n' "${KUBECONFIG:-}" "$*" >> "${CALL_LOG}"
+SH
+
+  cat > "${FAKE_BIN}/tailscaled" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'tailscaled %q\n' "$*" >> "${CALL_LOG}"
+socket=""
+while (($#)); do
+  case "$1" in
+    --socket=*)
+      socket="${1#--socket=}"
+      shift
+      ;;
+    --socket)
+      socket="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+[[ -n "${socket}" ]]
+mkdir -p "$(dirname "${socket}")"
+: > "${socket}"
+trap 'exit 0' TERM INT
+while :; do
+  sleep 60
+done
+SH
+
+  cat > "${FAKE_BIN}/tailscale" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'tailscale %q\n' "$*" >> "${CALL_LOG}"
+socket=""
+args=()
+while (($#)); do
+  case "$1" in
+    --socket)
+      socket="$2"
+      shift 2
+      ;;
+    *)
+      args+=("$1")
+      shift
+      ;;
+  esac
+done
+cmd="${args[0]:-}"
+case "${cmd}" in
+  status)
+    [[ -n "${socket}" && -e "${socket}" ]] || exit 1
+    ;;
+  up)
+    hostname=""
+    next_hostname=0
+    for arg in "${args[@]}"; do
+      case "${arg}" in
+        --hostname)
+          next_hostname=1
+          ;;
+        --hostname=*)
+          hostname="${arg#--hostname=}"
+          ;;
+        *)
+          if [[ "${next_hostname}" == "1" ]]; then
+            hostname="${arg}"
+            next_hostname=0
+          fi
+          ;;
+      esac
+    done
+    [[ -n "${socket}" && -n "${hostname}" ]]
+    printf '%s\n' "${hostname}" > "${socket}.hostname"
+    ;;
+  ip)
+    hostname="$(<"${socket}.hostname")"
+    case "${hostname}" in
+      headscale-test-client1) printf '100.64.0.11\n' ;;
+      headscale-test-client2) printf '100.64.0.12\n' ;;
+      *) printf '100.64.0.99\n' ;;
+    esac
+    ;;
+  ping|down)
+    ;;
+  *)
+    echo "unexpected tailscale command: ${cmd}" >&2
+    exit 2
+    ;;
+esac
 SH
 
   cat > "${FAKE_BIN}/talosctl" <<'SH'
@@ -602,6 +714,12 @@ assert_log_contains "-display none"
 assert_log_contains "-name headscale"
 
 HEADSCALE_BOOTSTRAP_MODE=local-vm HEADSCALE_READY_PROBE=pidfile scripts/wait-headscale.sh
+HEADSCALE_BOOTSTRAP_MODE=local-vm HEADSCALE_READY_PROBE=pidfile scripts/validate-headscale-clients.sh
+assert_log_contains "ssh -i ${TEST_STATE_DIR}/headscale/packer/id_ed25519"
+assert_log_contains "sudo headscale preauthkeys create --reusable --expiration 24h --tags tag:talos-lab"
+assert_log_contains "tailscale --socket ${TEST_STATE_DIR}/headscale/validate-clients/headscale-test-client1/tailscaled.sock up --login-server http://10.0.2.2:18080 --authkey tskey-headscale-test --hostname headscale-test-client1 --accept-dns=false --reset"
+assert_log_contains "tailscale --socket ${TEST_STATE_DIR}/headscale/validate-clients/headscale-test-client2/tailscaled.sock up --login-server http://10.0.2.2:18080 --authkey tskey-headscale-test --hostname headscale-test-client2 --accept-dns=false --reset"
+assert_log_contains "tailscale --socket ${TEST_STATE_DIR}/headscale/validate-clients/headscale-test-client1/tailscaled.sock ping 100.64.0.12"
 
 restart_pid_before="$(<"${TEST_STATE_DIR}/talos-ts-worker1.pid")"
 NODE=talos-ts-worker1 VM_DISPLAY_BACKEND=vnc VM_DISPLAY_DEVICE=VGA VM_DISPLAY_WIDTH= VM_DISPLAY_HEIGHT= scripts/restart-node.sh
@@ -842,6 +960,9 @@ assert_contains "${TMP_DIR}/make-headscale-wait.txt" "scripts/wait-headscale.sh"
 
 make -n headscale-image > "${TMP_DIR}/make-headscale-image.txt"
 assert_contains "${TMP_DIR}/make-headscale-image.txt" "scripts/build-headscale-image.sh"
+
+make -n headscale-client-validate > "${TMP_DIR}/make-headscale-client-validate.txt"
+assert_contains "${TMP_DIR}/make-headscale-client-validate.txt" "scripts/validate-headscale-clients.sh"
 
 make -n secrets-validate > "${TMP_DIR}/make-secrets-validate.txt"
 assert_contains "${TMP_DIR}/make-secrets-validate.txt" "scripts/validate-gitops-secrets.sh"

@@ -181,6 +181,9 @@ load_env() {
   : "${HEADSCALE_PACKER_SSH_USERNAME:=packer}"
   : "${HEADSCALE_IMAGE_HOSTNAME:=headscale-image}"
   : "${HEADSCALE_IMAGE_INSTANCE_ID:=headscale-image}"
+  : "${HEADSCALE_VALIDATE_CLIENT_NAMES:=headscale-test-client1 headscale-test-client2}"
+  : "${HEADSCALE_VALIDATE_TAG:=tag:talos-lab}"
+  : "${HEADSCALE_VALIDATE_KEY_EXPIRATION:=24h}"
   if [[ -z "${ARGOCD_REPO_URL+x}" ]]; then
     ARGOCD_REPO_URL="$(git -C "${ROOT_DIR}" config --get remote.origin.url 2>/dev/null || true)"
     if [[ "${ARGOCD_REPO_URL}" =~ ^git@github.com:(.+)$ ]]; then

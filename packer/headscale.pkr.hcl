@@ -89,8 +89,8 @@ build {
   provisioner "shell" {
     inline = [
       "sudo cloud-init status --wait",
-      "sudo apt-get update",
-      "sudo apt-get install -y /tmp/headscale.deb",
+      "sudo DEBIAN_FRONTEND=noninteractive apt-get update",
+      "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y /tmp/headscale.deb",
       "sudo install -d /etc/headscale",
       "sudo cp /tmp/config.yaml /etc/headscale/config.yaml",
       "sudo chown headscale:headscale /etc/headscale/config.yaml",
