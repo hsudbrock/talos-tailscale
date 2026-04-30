@@ -137,6 +137,25 @@ echo "unexpected curl args: $*" >&2
 exit 2
 SH
 
+  cat > "${FAKE_BIN}/getent" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'getent %q\n' "$*" >> "${CALL_LOG}"
+if [[ "${1:-}" == "hosts" && -n "${2:-}" ]]; then
+  case "${2}" in
+    talos-ts-cp1.tailnet.home.arpa)
+      printf '100.64.0.10 talos-ts-cp1.tailnet.home.arpa\n'
+      ;;
+    example.com)
+      printf '93.184.216.34 example.com\n'
+      ;;
+    *)
+      exit 2
+      ;;
+  esac
+fi
+SH
+
   cat > "${FAKE_BIN}/sha256sum" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -190,6 +209,24 @@ set -euo pipefail
 printf 'ssh %q\n' "$*" >> "${CALL_LOG}"
 cmd="${*: -1}"
 case "${cmd}" in
+  *"cat /etc/headscale/config.yaml"*)
+    cat <<'EOF'
+server_url: http://headscale.example.internal:8080
+dns:
+  magic_dns: true
+EOF
+    ;;
+  *"journalctl -u headscale"*)
+    cat <<'EOF'
+Apr 30 headscale[1]: control server started
+EOF
+    ;;
+  *"systemctl status headscale"*)
+    cat <<'EOF'
+● headscale.service - Headscale
+     Active: active (running)
+EOF
+    ;;
   *"headscale users create"*)
     ;;
   *"headscale users list -o json"*)
@@ -402,9 +439,15 @@ while (($#)); do
   esac
 done
 cmd="${args[0]:-}"
-case "${cmd}" in
+  case "${cmd}" in
   version|status)
-    [[ -n "${socket}" && -e "${socket}" ]] || exit 1
+    if [[ -n "${socket}" ]]; then
+      [[ -e "${socket}" ]] || exit 1
+    else
+      cat <<'EOF'
+100.64.0.11  henning-desk-man  headscale-host  linux  -
+EOF
+    fi
     ;;
   up)
     hostname=""
@@ -438,7 +481,7 @@ case "${cmd}" in
       *) printf '100.64.0.99\n' ;;
     esac
     ;;
-  ping|down)
+  ping|down|logout)
     ;;
   *)
     echo "unexpected tailscale command: ${cmd}" >&2
@@ -742,6 +785,33 @@ assert_log_contains "sudo headscale preauthkeys create --user 3 --reusable --exp
 assert_log_not_contains "sudo headscale preauthkeys create --user 3 --reusable --expiration 720h --tags"
 rm -f "${TEST_STATE_DIR}/headscale.pid"
 
+HEADSCALE_BOOTSTRAP_MODE=local-vm scripts/headscale-status.sh > "${TMP_DIR}/headscale-status.txt"
+assert_contains "${TMP_DIR}/headscale-status.txt" "== Host tailscale status =="
+assert_contains "${TMP_DIR}/headscale-status.txt" "== Headscale service status =="
+assert_contains "${TMP_DIR}/headscale-status.txt" "== Headscale nodes =="
+assert_log_contains "ssh -i ${TEST_STATE_DIR}/headscale/packer/id_ed25519"
+
+printf 'headscale serial log\n' > "${TEST_STATE_DIR}/logs/headscale.log"
+HEADSCALE_BOOTSTRAP_MODE=local-vm scripts/headscale-config-show.sh > "${TMP_DIR}/headscale-config-show.txt"
+assert_contains "${TMP_DIR}/headscale-config-show.txt" "== Rendered Headscale config =="
+assert_contains "${TMP_DIR}/headscale-config-show.txt" "== Live Headscale config =="
+assert_contains "${TMP_DIR}/headscale-config-show.txt" "base_domain: tailnet.home.arpa"
+
+HEADSCALE_BOOTSTRAP_MODE=local-vm scripts/headscale-logs.sh > "${TMP_DIR}/headscale-logs.txt"
+assert_contains "${TMP_DIR}/headscale-logs.txt" "== Headscale serial log =="
+assert_contains "${TMP_DIR}/headscale-logs.txt" "== Headscale service journal =="
+assert_contains "${TMP_DIR}/headscale-logs.txt" "headscale serial log"
+assert_contains "${TMP_DIR}/headscale-logs.txt" "control server started"
+
+HEADSCALE_BOOTSTRAP_MODE=local-vm scripts/headscale-dns-check.sh > "${TMP_DIR}/headscale-dns-check.txt"
+assert_contains "${TMP_DIR}/headscale-dns-check.txt" "== tailscale status =="
+assert_contains "${TMP_DIR}/headscale-dns-check.txt" "== Tailnet DNS lookup =="
+assert_contains "${TMP_DIR}/headscale-dns-check.txt" "talos-ts-cp1.tailnet.home.arpa"
+assert_contains "${TMP_DIR}/headscale-dns-check.txt" "== Public DNS lookup =="
+
+scripts/disconnect-headscale-host.sh
+assert_log_contains "sudo tailscale logout"
+
 VM_DISPLAY_BACKEND=vnc VM_DISPLAY_DEVICE=VGA VM_DISPLAY_WIDTH= VM_DISPLAY_HEIGHT= scripts/start-vms.sh
 for node in talos-ts-cp1 talos-ts-cp2 talos-ts-cp3 talos-ts-worker1 talos-ts-worker2 talos-ts-worker3; do
   assert_file "${TEST_STATE_DIR}/disks/${node}.qcow2"
@@ -1017,6 +1087,11 @@ make help > "${TMP_DIR}/make-help.txt"
 assert_contains "${TMP_DIR}/make-help.txt" "make argocd     Install Argo CD and apply the root Application"
 assert_contains "${TMP_DIR}/make-help.txt" "make restart-node NODE=talos-ts-worker1 Restart a single VM by node name"
 assert_contains "${TMP_DIR}/make-help.txt" "make bootstrap-from-scratch Rebuild disks, start VMs, apply configs, and bootstrap"
+assert_contains "${TMP_DIR}/make-help.txt" "make headscale-host-disconnect Disconnect this host from the Headscale network"
+assert_contains "${TMP_DIR}/make-help.txt" "make headscale-status Show host Tailscale status plus local Headscale VM state"
+assert_contains "${TMP_DIR}/make-help.txt" "make headscale-config-show Show rendered and live Headscale config"
+assert_contains "${TMP_DIR}/make-help.txt" "make headscale-logs Show recent Headscale serial and service logs"
+assert_contains "${TMP_DIR}/make-help.txt" "make headscale-dns-check Check tailnet and public DNS resolution through Headscale"
 assert_contains "${TMP_DIR}/make-help.txt" "make argocd-status Show Argo CD pods and rollout status"
 assert_contains "${TMP_DIR}/make-help.txt" "make argocd-sync Trigger a hard refresh and sync of the root Application"
 assert_contains "${TMP_DIR}/make-help.txt" "make argocd-ui  Port-forward the Argo CD API/UI to localhost:8080"
@@ -1048,6 +1123,21 @@ assert_contains "${TMP_DIR}/make-headscale-client-validate.txt" "scripts/validat
 
 make -n headscale-host-connect > "${TMP_DIR}/make-headscale-host-connect.txt"
 assert_contains "${TMP_DIR}/make-headscale-host-connect.txt" "scripts/connect-headscale-host.sh"
+
+make -n headscale-host-disconnect > "${TMP_DIR}/make-headscale-host-disconnect.txt"
+assert_contains "${TMP_DIR}/make-headscale-host-disconnect.txt" "scripts/disconnect-headscale-host.sh"
+
+make -n headscale-status > "${TMP_DIR}/make-headscale-status.txt"
+assert_contains "${TMP_DIR}/make-headscale-status.txt" "scripts/headscale-status.sh"
+
+make -n headscale-config-show > "${TMP_DIR}/make-headscale-config-show.txt"
+assert_contains "${TMP_DIR}/make-headscale-config-show.txt" "scripts/headscale-config-show.sh"
+
+make -n headscale-logs > "${TMP_DIR}/make-headscale-logs.txt"
+assert_contains "${TMP_DIR}/make-headscale-logs.txt" "scripts/headscale-logs.sh"
+
+make -n headscale-dns-check > "${TMP_DIR}/make-headscale-dns-check.txt"
+assert_contains "${TMP_DIR}/make-headscale-dns-check.txt" "scripts/headscale-dns-check.sh"
 
 make -n secrets-validate > "${TMP_DIR}/make-secrets-validate.txt"
 assert_contains "${TMP_DIR}/make-secrets-validate.txt" "scripts/validate-gitops-secrets.sh"
