@@ -20,7 +20,7 @@ priority: medium
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Evaluate whether this lab should continue using Tailscale's public DERP map after the Headscale migration or move to a self-hosted DERP path. The outcome should make the relay-network ownership tradeoff explicit and, if a self-hosted path is chosen, define the required Headscale, VM, port, and validation changes.
+Evaluate whether this lab should continue using Tailscale's public DERP map after the Headscale migration or move to a self-hosted DERP path. The outcome should make the relay-network ownership tradeoff explicit and, if a self-hosted path is chosen, define the required Headscale, VM, port, and validation changes. For the first self-hosted implementation pass, prefer embedded DERP on the existing Headscale VM rather than introducing a separate DERP VM unless the evaluation shows a strong reason to split them.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -35,7 +35,7 @@ Evaluate whether this lab should continue using Tailscale's public DERP map afte
 
 <!-- SECTION:PLAN:BEGIN -->
 1. Review the current Headscale config and lab networking assumptions to capture exactly how DERP is being sourced today.
-2. Evaluate the embedded/self-hosted DERP path against the current slirp-based local VM topology, including required listener ports and likely relay behavior.
+2. Evaluate the embedded/self-hosted DERP path against the current slirp-based local VM topology, including required listener ports and likely relay behavior, starting with embedded DERP on the existing Headscale VM.
 3. Decide whether to keep the default public DERP map or move to a self-hosted DERP server for this lab.
-4. Record the outcome and any required implementation follow-up under TASK-25.
+4. Record the outcome and any required implementation follow-up under TASK-25, including whether a separate DERP VM is unnecessary for the lab.
 <!-- SECTION:PLAN:END -->
