@@ -43,6 +43,15 @@ do
 done
 
 render_headscale_config() {
+  local rendered_nameservers
+
+  rendered_nameservers="$(
+    read -r -a resolver_addrs <<< "${HEADSCALE_GLOBAL_DNS_RESOLVERS}"
+    for resolver in "${resolver_addrs[@]}"; do
+      printf '    - %s\n' "${resolver}"
+    done
+  )"
+
   sed \
     -e "s|__HEADSCALE_SERVER_URL__|${HEADSCALE_SERVER_URL}|g" \
     -e "s|__HEADSCALE_LISTEN_ADDR__|${HEADSCALE_LISTEN_ADDR}|g" \
@@ -51,7 +60,14 @@ render_headscale_config() {
     -e "s|__HEADSCALE_PREFIX_V4__|${HEADSCALE_PREFIX_V4}|g" \
     -e "s|__HEADSCALE_PREFIX_V6__|${HEADSCALE_PREFIX_V6}|g" \
     -e "s|__HEADSCALE_BASE_DOMAIN__|${HEADSCALE_BASE_DOMAIN}|g" \
-    "${HEADSCALE_TEMPLATE}" > "${HEADSCALE_RENDERED_CONFIG}"
+    "${HEADSCALE_TEMPLATE}" \
+    | RENDERED_HEADSCALE_NAMESERVERS="${rendered_nameservers}" python3 -c '
+import os
+import sys
+
+content = sys.stdin.read()
+print(content.replace("__HEADSCALE_GLOBAL_DNS_RESOLVERS__", os.environ["RENDERED_HEADSCALE_NAMESERVERS"]), end="")
+' > "${HEADSCALE_RENDERED_CONFIG}"
 }
 
 render_cloud_init_seed() {

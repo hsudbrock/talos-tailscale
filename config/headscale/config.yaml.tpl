@@ -14,10 +14,11 @@ derp:
     - https://controlplane.tailscale.com/derpmap/default
 dns:
   magic_dns: true
-  override_local_dns: false
+  override_local_dns: true
   base_domain: __HEADSCALE_BASE_DOMAIN__
   nameservers:
-    global: []
+    global:
+__HEADSCALE_GLOBAL_DNS_RESOLVERS__
 unix_socket: /var/run/headscale/headscale.sock
 unix_socket_permission: "0770"
 log:

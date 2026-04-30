@@ -259,10 +259,13 @@ enter it there. Override `HEADSCALE_HOST_USER`, `HEADSCALE_HOST_TAG`,
 behavior.
 
 For host-side DNS resolution, the repo now defaults `HEADSCALE_BASE_DOMAIN` to
-`tailnet.home.arpa` and enables Headscale MagicDNS in the generated
-configuration. After changing the Headscale DNS settings, rebuild the Headscale
-image, recreate the Headscale VM overlay disk, restart the VM, and reconnect
-the host so the updated DNS config is advertised:
+`tailnet.home.arpa`, enables Headscale MagicDNS, and sets
+`dns.override_local_dns: true` in the generated configuration so clients
+actually use the advertised tailnet DNS policy. Headscale also needs upstream
+resolvers for non-tailnet queries, so the repo advertises
+`HEADSCALE_GLOBAL_DNS_RESOLVERS` by default. After changing the Headscale DNS
+settings, rebuild the Headscale image, recreate the Headscale VM overlay disk,
+restart the VM, and reconnect the host so the updated DNS config is advertised:
 
 ```bash
 make stop

@@ -348,6 +348,9 @@ SH
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'sudo %q\n' "$*" >> "${CALL_LOG}"
+if [[ "${1:-}" == "-n" ]]; then
+  shift
+fi
 "$@"
 SH
 
@@ -623,6 +626,12 @@ assert_contains "${TEST_STATE_DIR}/headscale/packer/config.yaml" "server_url: ht
 assert_contains "${TEST_STATE_DIR}/headscale/packer/config.yaml" "listen_addr: 0.0.0.0:8080"
 assert_contains "${TEST_STATE_DIR}/headscale/packer/config.yaml" "v4: 100.64.0.0/10"
 assert_contains "${TEST_STATE_DIR}/headscale/packer/config.yaml" "v6: fd7a:115c:a1e0::/48"
+assert_contains "${TEST_STATE_DIR}/headscale/packer/config.yaml" "base_domain: tailnet.home.arpa"
+assert_contains "${TEST_STATE_DIR}/headscale/packer/config.yaml" "magic_dns: true"
+assert_contains "${TEST_STATE_DIR}/headscale/packer/config.yaml" "override_local_dns: true"
+assert_contains "${TEST_STATE_DIR}/headscale/packer/config.yaml" "    - 1.1.1.1"
+assert_contains "${TEST_STATE_DIR}/headscale/packer/config.yaml" "    - 8.8.8.8"
+assert_contains "${TEST_STATE_DIR}/headscale/packer/config.yaml" "    - 9.9.9.9"
 assert_contains "${TEST_STATE_DIR}/headscale/packer/user-data" "name: packer"
 assert_contains "${TEST_STATE_DIR}/headscale/packer/user-data" "ssh-ed25519 fake-public-key"
 assert_contains "${TEST_STATE_DIR}/headscale/packer/meta-data" "instance-id: headscale-image"

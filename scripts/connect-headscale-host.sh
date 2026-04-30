@@ -30,10 +30,6 @@ tailscale_cmd=(tailscale up --login-server "${HEADSCALE_HOST_CONNECT_URL}" --aut
 if [[ "${EUID}" == "0" ]]; then
   "${tailscale_cmd[@]}"
 elif command -v sudo >/dev/null 2>&1; then
-  if ! sudo -n true >/dev/null 2>&1; then
-    echo "sudo access is required to run tailscale up; rerun make headscale-host-connect from an interactive shell and enter your sudo password" >&2
-    exit 1
-  fi
   sudo "${tailscale_cmd[@]}"
 else
   "${tailscale_cmd[@]}"

@@ -187,6 +187,7 @@ load_env() {
   : "${HEADSCALE_PREFIX_V4:=100.64.0.0/10}"
   : "${HEADSCALE_PREFIX_V6:=fd7a:115c:a1e0::/48}"
   : "${HEADSCALE_BASE_DOMAIN:=tailnet.home.arpa}"
+  : "${HEADSCALE_GLOBAL_DNS_RESOLVERS:=1.1.1.1 8.8.8.8 9.9.9.9}"
   : "${HEADSCALE_PACKER_SSH_USERNAME:=packer}"
   : "${HEADSCALE_IMAGE_HOSTNAME:=headscale-image}"
   : "${HEADSCALE_IMAGE_INSTANCE_ID:=headscale-image}"
