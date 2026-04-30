@@ -4,12 +4,12 @@ KUBECONFIG ?= $(STATE_DIR)/kubeconfig/config
 
 .DEFAULT_GOAL := help
 
-.PHONY: help env image headscale-image configs start headscale-wait headscale-client-validate restart-node apply bootstrap bootstrap-from-scratch validate cilium-validate logs-audit argocd argocd-status argocd-sync argocd-ui argocd-password longhorn-status longhorn-sync longhorn-ui hubble-ui k9s stop clean clean-disks reset test test-local secrets-validate sealed-secrets-backup sealed-secrets-restore vnc-cp1 vnc-cp2 vnc-cp3 vnc-worker1 vnc-worker2 vnc-worker3 logs-tailscale logs-tailscale-cp1 logs-tailscale-cp2 logs-tailscale-cp3 logs-tailscale-worker1 logs-tailscale-worker2 logs-tailscale-worker3
+.PHONY: help env talos-image headscale-image configs start headscale-wait headscale-client-validate restart-node apply bootstrap bootstrap-from-scratch validate cilium-validate logs-audit argocd argocd-status argocd-sync argocd-ui argocd-password longhorn-status longhorn-sync longhorn-ui hubble-ui k9s stop clean clean-disks reset test test-local secrets-validate sealed-secrets-backup sealed-secrets-restore vnc-cp1 vnc-cp2 vnc-cp3 vnc-worker1 vnc-worker2 vnc-worker3 logs-tailscale logs-tailscale-cp1 logs-tailscale-cp2 logs-tailscale-cp3 logs-tailscale-worker1 logs-tailscale-worker2 logs-tailscale-worker3
 
 help:
 	@printf 'Talos over Tailscale local test targets:\n\n'
 	@printf '  make env        Create .env from the example if it does not exist\n'
-	@printf '  make image      Build/download Talos ISO with the Tailscale extension\n'
+	@printf '  make talos-image Build/download Talos ISO with the Tailscale extension\n'
 	@printf '  make headscale-image Build a reusable Headscale base qcow2 image\n'
 	@printf '  make configs    Generate Talos configs from .env\n'
 	@printf '  make start      Start the isolated QEMU VMs and optional local Headscale VM\n'
@@ -44,7 +44,7 @@ help:
 	@printf '\nTypical flow:\n'
 	@printf '  make env\n'
 	@printf '  $$EDITOR .env\n'
-	@printf '  make image configs start apply bootstrap validate\n'
+	@printf '  make talos-image configs start apply bootstrap validate\n'
 
 env:
 	@if [[ -f .env ]]; then \
@@ -54,7 +54,7 @@ env:
 		echo "Created .env. Edit TS_AUTHKEY before continuing."; \
 	fi
 
-image:
+talos-image:
 	scripts/prepare-image.sh
 
 headscale-image:

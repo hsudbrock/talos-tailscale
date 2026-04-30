@@ -10,6 +10,8 @@ prefixes:
 derp:
   server:
     enabled: false
+  urls:
+    - https://controlplane.tailscale.com/derpmap/default
 dns:
   magic_dns: false
   override_local_dns: false

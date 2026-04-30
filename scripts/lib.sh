@@ -161,6 +161,15 @@ load_env() {
   : "${HEADSCALE_VM_MEMORY_MIB:=2048}"
   : "${HEADSCALE_VM_CPUS:=2}"
   : "${HEADSCALE_VM_CPU_MODEL:=${VM_CPU_MODEL}}"
+  : "${HEADSCALE_VM_DISPLAY_BACKEND:=none}"
+  : "${HEADSCALE_HOST_VNC_DISPLAY:=7}"
+  : "${HEADSCALE_VM_DISPLAY_DEVICE:=${VM_DISPLAY_DEVICE}}"
+  if [[ -z "${HEADSCALE_VM_DISPLAY_WIDTH+x}" ]]; then
+    HEADSCALE_VM_DISPLAY_WIDTH=""
+  fi
+  if [[ -z "${HEADSCALE_VM_DISPLAY_HEIGHT+x}" ]]; then
+    HEADSCALE_VM_DISPLAY_HEIGHT=""
+  fi
   : "${HEADSCALE_HOST_HTTP_PORT:=18080}"
   : "${HEADSCALE_GUEST_HTTP_PORT:=8080}"
   : "${HEADSCALE_HOST_SSH_PORT:=10022}"
@@ -182,6 +191,8 @@ load_env() {
   : "${HEADSCALE_IMAGE_HOSTNAME:=headscale-image}"
   : "${HEADSCALE_IMAGE_INSTANCE_ID:=headscale-image}"
   : "${HEADSCALE_VALIDATE_CLIENT_NAMES:=headscale-test-client1 headscale-test-client2}"
+  : "${HEADSCALE_VALIDATE_URL:=http://127.0.0.1:${HEADSCALE_HOST_HTTP_PORT}}"
+  : "${HEADSCALE_VALIDATE_USER:=headscale-test}"
   : "${HEADSCALE_VALIDATE_TAG:=tag:talos-lab}"
   : "${HEADSCALE_VALIDATE_KEY_EXPIRATION:=24h}"
   if [[ -z "${ARGOCD_REPO_URL+x}" ]]; then
@@ -396,6 +407,8 @@ start_vm() {
 }
 
 ensure_headscale_vm_disk() {
+  local backing_image
+
   if [[ -f "${HEADSCALE_VM_DISK}" ]]; then
     return 0
   fi
@@ -410,12 +423,15 @@ ensure_headscale_vm_disk() {
     exit 1
   fi
 
+  backing_image="$(cd "$(dirname "${HEADSCALE_VM_IMAGE}")" && pwd)/$(basename "${HEADSCALE_VM_IMAGE}")"
   mkdir -p "$(dirname "${HEADSCALE_VM_DISK}")"
-  qemu-img create -f qcow2 -F qcow2 -b "${HEADSCALE_VM_IMAGE}" "${HEADSCALE_VM_DISK}" >/dev/null
+  qemu-img create -f qcow2 -F qcow2 -b "${backing_image}" "${HEADSCALE_VM_DISK}" >/dev/null
 }
 
 start_headscale_vm() {
-  local pidfile log_file qemu_log_file
+  local pidfile log_file qemu_log_file vnc_port
+  local display_label
+  local display_device_args display_args
   local qemu_cmd
 
   headscale_local_vm_enabled || return 0
@@ -427,6 +443,10 @@ start_headscale_vm() {
   pidfile="$(state_path "${HEADSCALE_VM_NAME}.pid")"
   log_file="$(state_path "logs/${HEADSCALE_VM_NAME}.log")"
   qemu_log_file="$(state_path "logs/${HEADSCALE_VM_NAME}.qemu.log")"
+  vnc_port="$((5900 + HEADSCALE_HOST_VNC_DISPLAY))"
+  display_device_args=()
+  display_args=(-display none -daemonize -pidfile "${pidfile}")
+  display_label="headless"
 
   if [[ -f "${pidfile}" ]] && kill -0 "$(<"${pidfile}")" 2>/dev/null; then
     log "${HEADSCALE_VM_NAME} already running with pid $(<"${pidfile}")"
@@ -437,7 +457,30 @@ start_headscale_vm() {
 
   ensure_headscale_vm_disk
 
-  log "Starting ${HEADSCALE_VM_NAME}; Headscale host forward localhost:${HEADSCALE_HOST_HTTP_PORT}, SSH localhost:${HEADSCALE_HOST_SSH_PORT}"
+  if [[ -n "${HEADSCALE_VM_DISPLAY_WIDTH}" && -n "${HEADSCALE_VM_DISPLAY_HEIGHT}" ]]; then
+    display_device_args=(-device "${HEADSCALE_VM_DISPLAY_DEVICE},xres=${HEADSCALE_VM_DISPLAY_WIDTH},yres=${HEADSCALE_VM_DISPLAY_HEIGHT}")
+  elif [[ "${HEADSCALE_VM_DISPLAY_BACKEND}" != "none" ]]; then
+    display_device_args=(-device "${HEADSCALE_VM_DISPLAY_DEVICE}")
+  fi
+
+  case "${HEADSCALE_VM_DISPLAY_BACKEND}" in
+    none)
+      ;;
+    gtk)
+      display_args=(-display "gtk,zoom-to-fit=on,show-menubar=on" -daemonize -pidfile "${pidfile}")
+      display_label="GTK window"
+      ;;
+    vnc)
+      display_args=(-display "vnc=127.0.0.1:${HEADSCALE_HOST_VNC_DISPLAY}" -daemonize -pidfile "${pidfile}")
+      display_label="VNC localhost:${vnc_port}"
+      ;;
+    *)
+      echo "unsupported HEADSCALE_VM_DISPLAY_BACKEND=${HEADSCALE_VM_DISPLAY_BACKEND}; expected none, gtk, or vnc" >&2
+      exit 1
+      ;;
+  esac
+
+  log "Starting ${HEADSCALE_VM_NAME}; Headscale host forward localhost:${HEADSCALE_HOST_HTTP_PORT}, SSH localhost:${HEADSCALE_HOST_SSH_PORT}, display ${display_label}"
   qemu_cmd=(
     qemu-system-x86_64
     -name "${HEADSCALE_VM_NAME}" \
@@ -448,9 +491,9 @@ start_headscale_vm() {
     -drive "file=${HEADSCALE_VM_DISK},format=qcow2,if=virtio" \
     -netdev "user,id=${HEADSCALE_VM_NAME},hostname=${HEADSCALE_VM_NAME},hostfwd=tcp:127.0.0.1:${HEADSCALE_HOST_HTTP_PORT}-:${HEADSCALE_GUEST_HTTP_PORT},hostfwd=tcp:127.0.0.1:${HEADSCALE_HOST_SSH_PORT}-:${HEADSCALE_GUEST_SSH_PORT}" \
     -device "virtio-net-pci,netdev=${HEADSCALE_VM_NAME}" \
-    -display none \
+    "${display_device_args[@]}" \
     -serial "file:${log_file}" \
-    -daemonize -pidfile "${pidfile}"
+    "${display_args[@]}"
   )
 
   "${qemu_cmd[@]}" 2>"${qemu_log_file}"

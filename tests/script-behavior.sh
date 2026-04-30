@@ -190,6 +190,18 @@ set -euo pipefail
 printf 'ssh %q\n' "$*" >> "${CALL_LOG}"
 cmd="${*: -1}"
 case "${cmd}" in
+  *"headscale users create"*)
+    ;;
+  *"headscale users list -o json"*)
+    cat <<'EOF'
+[
+  {
+    "id": 1,
+    "name": "headscale-test"
+  }
+]
+EOF
+    ;;
   *"headscale preauthkeys create"*)
     printf 'tskey-headscale-test\n'
     ;;
@@ -373,7 +385,7 @@ while (($#)); do
 done
 cmd="${args[0]:-}"
 case "${cmd}" in
-  status)
+  version|status)
     [[ -n "${socket}" && -e "${socket}" ]] || exit 1
     ;;
   up)
@@ -569,6 +581,7 @@ export NODE_NAME_SUFFIX=""
 export LONGHORN_DISK_SELECTOR='disk.dev_path == "/dev/vdb"'
 export LONGHORN_VOLUME_MAX_SIZE="16GiB"
 export HEADSCALE_BOOTSTRAP_MODE="disabled"
+export HEADSCALE_VM_DISPLAY_BACKEND="none"
 
 scripts/prepare-image.sh
 assert_file "${TEST_STATE_DIR}/schematic.yaml"
@@ -709,17 +722,29 @@ assert_file "${TEST_STATE_DIR}/headscale.pid"
 assert_file "${TEST_STATE_DIR}/disks/headscale.qcow2"
 assert_log_contains "hostfwd=tcp:127.0.0.1:18080-:8080"
 assert_log_contains "hostfwd=tcp:127.0.0.1:10022-:22"
+assert_log_contains "qemu-img create -f qcow2 -F qcow2 -b ${TMP_DIR}/headscale-base.qcow2 ${TEST_STATE_DIR}/disks/headscale.qcow2"
 assert_log_contains "file=${TEST_STATE_DIR}/disks/headscale.qcow2,format=qcow2,if=virtio"
 assert_log_contains "-display none"
 assert_log_contains "-name headscale"
 
+rm -f "${TEST_STATE_DIR}/headscale.pid"
+HEADSCALE_BOOTSTRAP_MODE=local-vm HEADSCALE_VM_IMAGE="${TMP_DIR}/headscale-base.qcow2" HEADSCALE_VM_DISPLAY_BACKEND=gtk HEADSCALE_VM_DISPLAY_DEVICE=VGA scripts/start-vms.sh
+assert_log_contains "-display gtk,zoom-to-fit=on,show-menubar=on"
+assert_log_contains "-device VGA"
+
+rm -f "${TEST_STATE_DIR}/headscale.pid"
+HEADSCALE_BOOTSTRAP_MODE=local-vm HEADSCALE_VM_IMAGE="${TMP_DIR}/headscale-base.qcow2" HEADSCALE_VM_DISPLAY_BACKEND=vnc HEADSCALE_HOST_VNC_DISPLAY=7 HEADSCALE_VM_DISPLAY_DEVICE=VGA scripts/start-vms.sh
+assert_log_contains "-display vnc=127.0.0.1:7"
+
 HEADSCALE_BOOTSTRAP_MODE=local-vm HEADSCALE_READY_PROBE=pidfile scripts/wait-headscale.sh
 HEADSCALE_BOOTSTRAP_MODE=local-vm HEADSCALE_READY_PROBE=pidfile scripts/validate-headscale-clients.sh
 assert_log_contains "ssh -i ${TEST_STATE_DIR}/headscale/packer/id_ed25519"
-assert_log_contains "sudo headscale preauthkeys create --reusable --expiration 24h --tags tag:talos-lab"
-assert_log_contains "tailscale --socket ${TEST_STATE_DIR}/headscale/validate-clients/headscale-test-client1/tailscaled.sock up --login-server http://10.0.2.2:18080 --authkey tskey-headscale-test --hostname headscale-test-client1 --accept-dns=false --reset"
-assert_log_contains "tailscale --socket ${TEST_STATE_DIR}/headscale/validate-clients/headscale-test-client2/tailscaled.sock up --login-server http://10.0.2.2:18080 --authkey tskey-headscale-test --hostname headscale-test-client2 --accept-dns=false --reset"
-assert_log_contains "tailscale --socket ${TEST_STATE_DIR}/headscale/validate-clients/headscale-test-client1/tailscaled.sock ping 100.64.0.12"
+assert_log_contains "sudo headscale users create headscale-test --force"
+assert_log_contains "sudo headscale users list -o json"
+assert_log_contains "sudo headscale preauthkeys create --user 1 --reusable --expiration 24h --tags tag:talos-lab"
+assert_log_contains "tailscale --socket ${TEST_STATE_DIR}/headscale/validate-clients/headscale-test-client1.sock up --login-server http://127.0.0.1:18080 --auth-key tskey-headscale-test --hostname headscale-test-client1 --accept-dns=false --reset"
+assert_log_contains "tailscale --socket ${TEST_STATE_DIR}/headscale/validate-clients/headscale-test-client2.sock up --login-server http://127.0.0.1:18080 --auth-key tskey-headscale-test --hostname headscale-test-client2 --accept-dns=false --reset"
+assert_log_contains "tailscale --socket ${TEST_STATE_DIR}/headscale/validate-clients/headscale-test-client1.sock ping 100.64.0.12"
 
 restart_pid_before="$(<"${TEST_STATE_DIR}/talos-ts-worker1.pid")"
 NODE=talos-ts-worker1 VM_DISPLAY_BACKEND=vnc VM_DISPLAY_DEVICE=VGA VM_DISPLAY_WIDTH= VM_DISPLAY_HEIGHT= scripts/restart-node.sh
@@ -957,6 +982,9 @@ assert_contains "${TMP_DIR}/make-bootstrap-from-scratch.txt" "scripts/bootstrap-
 
 make -n headscale-wait > "${TMP_DIR}/make-headscale-wait.txt"
 assert_contains "${TMP_DIR}/make-headscale-wait.txt" "scripts/wait-headscale.sh"
+
+make -n talos-image > "${TMP_DIR}/make-talos-image.txt"
+assert_contains "${TMP_DIR}/make-talos-image.txt" "scripts/prepare-image.sh"
 
 make -n headscale-image > "${TMP_DIR}/make-headscale-image.txt"
 assert_contains "${TMP_DIR}/make-headscale-image.txt" "scripts/build-headscale-image.sh"

@@ -131,7 +131,7 @@ Build and download a Talos ISO with the official Tailscale extension plus the
 Longhorn-required `iscsi-tools` and `util-linux-tools` extensions:
 
 ```bash
-make image
+make talos-image
 ```
 
 ## Optional local Headscale VM
@@ -172,6 +172,7 @@ Set these values in `.env` for local-vm mode:
 ```bash
 HEADSCALE_BOOTSTRAP_MODE=local-vm
 HEADSCALE_VM_IMAGE=.state/headscale/headscale-base.qcow2
+HEADSCALE_VM_DISPLAY_BACKEND=none
 HEADSCALE_HOST_HTTP_PORT=18080
 HEADSCALE_GUEST_HTTP_PORT=8080
 HEADSCALE_HOST_SSH_PORT=10022
@@ -183,6 +184,22 @@ the first time it starts the VM. `make bootstrap-from-scratch` rebuilds Talos
 node disks only; it intentionally preserves the Headscale disk so control-plane
 state survives ordinary Talos rebuilds. Use `make clean` or `make clean-disks`
 when you explicitly want to wipe local VM state.
+
+By default the Headscale VM runs headless. If you want a visible console like
+the Talos VMs, set:
+
+```bash
+HEADSCALE_VM_DISPLAY_BACKEND=gtk
+```
+
+Or use localhost-only VNC with:
+
+```bash
+HEADSCALE_VM_DISPLAY_BACKEND=vnc
+HEADSCALE_HOST_VNC_DISPLAY=7
+```
+
+That exposes the Headscale console on `127.0.0.1:5907`.
 
 When `HEADSCALE_BOOTSTRAP_MODE=local-vm`, the default client-facing
 `HEADSCALE_URL` becomes:
@@ -211,8 +228,13 @@ the same `packer` key stored under `.state/headscale/packer/`, creates a
 reusable tagged preauth key, starts two isolated host-side `tailscaled`
 instances, and confirms that both clients appear in `headscale nodes list` and
 can `tailscale ping` each other. Override `HEADSCALE_VALIDATE_CLIENT_NAMES`,
-`HEADSCALE_VALIDATE_TAG`, or `HEADSCALE_VALIDATE_KEY_EXPIRATION` in `.env` if
-you need different validation names or tags.
+`HEADSCALE_VALIDATE_URL`, `HEADSCALE_VALIDATE_USER`, `HEADSCALE_VALIDATE_TAG`, or
+`HEADSCALE_VALIDATE_KEY_EXPIRATION` in `.env` if you need different validation
+names, user ownership, or tags.
+
+Unlike Talos guests, the validation clients run on the host, so they should
+normally talk to Headscale via `http://127.0.0.1:${HEADSCALE_HOST_HTTP_PORT}`
+rather than the guest-facing `HEADSCALE_URL` value.
 
 If you already have a remote Headscale deployment, skip the local VM entirely:
 
@@ -589,12 +611,12 @@ Before installing Longhorn through Argo CD, make sure the nodes pick up both the
 image-level and machine-config-level prerequisites:
 
 ```bash
-make image
+make talos-image
 make configs
 make apply
 ```
 
-`make image` refreshes the Talos schematic so newly installed or upgraded nodes
+`make talos-image` refreshes the Talos schematic so newly installed or upgraded nodes
 include `siderolabs/iscsi-tools` and `siderolabs/util-linux-tools`.
 `make configs` regenerates the worker configs with:
 
@@ -866,7 +888,7 @@ cat .state/schematic.id
 talosctl --nodes 127.0.0.1:50001 --talosconfig .state/talos/generated/talosconfig service ext-tailscale
 ```
 
-If the service does not exist, rerun `scripts/prepare-image.sh`,
+If the service does not exist, rerun `make talos-image`,
 `scripts/generate-configs.sh`, and recreate the VM disks.
 
 ### Nodes choose the QEMU address instead of Tailscale
